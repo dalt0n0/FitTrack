@@ -1238,7 +1238,7 @@ async function runFoodSearch(){
   }
   statusEl.textContent='Searching...';
   try {
-    const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=20&fields=product_name,brands,nutriments,serving_size`;
+    const url=`/api/foodsearch?q=${encodeURIComponent(q)}`;
     const res=await fetch(url);
     const data=await res.json();
     const products=(data.products||[]).filter(p=>p.product_name);

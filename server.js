@@ -126,6 +126,20 @@ app.put('/api/settings', (req, res) => {
   res.json(db.settings);
 });
 
+// ── Food Search Proxy ─────────────────────────────
+app.get('/api/foodsearch', async (req, res) => {
+  const q = req.query.q;
+  if (!q) return res.json({ products: [] });
+  try {
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=20&fields=product_name,brands,nutriments,serving_size`;
+    const r = await fetch(url);
+    const data = await r.json();
+    res.json(data);
+  } catch (e) {
+    res.status(502).json({ error: 'Food search unavailable', products: [] });
+  }
+});
+
 // ── Custom Foods ─────────────────────────────────
 app.get('/api/customfoods', (req, res) => {
   const db = readDB();
