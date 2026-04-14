@@ -141,14 +141,18 @@ async function fetchOFF(q) {
   const timeout = setTimeout(() => controller.abort(), 15000);
   let data;
   try {
-    const r = await fetch(url, { signal: controller.signal });
-    if (!r.ok) throw new Error(`OFF returned ${r.status}`);
+    const r = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'FitTrack/1.0 (https://github.com/dalt0n0/FitTrack; self-hosted)'
+      }
+    });
+    if (!r.ok) throw new Error(`OFF HTTP ${r.status}`);
     data = await r.json();
   } finally {
     clearTimeout(timeout);
   }
   _foodCache.set(key, { ts: Date.now(), data });
-  // Evict old entries to prevent unbounded growth
   if (_foodCache.size > 200) {
     const oldest = [..._foodCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0][0];
     _foodCache.delete(oldest);
@@ -159,19 +163,32 @@ async function fetchOFF(q) {
 app.get('/api/foodsearch', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json({ products: [] });
-  // Retry up to 2 times with a short back-off
   let lastErr;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 800));
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
       const data = await fetchOFF(q);
       return res.json(data);
     } catch (e) {
       lastErr = e;
-      console.error(`Food search attempt ${attempt + 1} failed:`, e.message);
+      console.error(`[foodsearch] attempt ${attempt + 1} failed: ${e.message}`);
     }
   }
-  res.status(502).json({ error: 'Food search unavailable', products: [] });
+  console.error('[foodsearch] all attempts failed:', lastErr?.message);
+  res.status(502).json({ error: lastErr?.message || 'Food search unavailable', products: [] });
+});
+
+// Quick connectivity test — hit this from the server to verify OFF is reachable
+app.get('/api/foodsearch/test', async (req, res) => {
+  try {
+    const r = await fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms=apple&search_simple=1&action=process&json=1&page_size=1&fields=product_name', {
+      headers: { 'User-Agent': 'FitTrack/1.0 (connectivity-test)' }
+    });
+    const text = await r.text();
+    res.json({ status: r.status, ok: r.ok, bodySnippet: text.slice(0, 200) });
+  } catch (e) {
+    res.status(502).json({ error: e.message, stack: e.stack });
+  }
 });
 
 // ── Custom Foods ─────────────────────────────────
