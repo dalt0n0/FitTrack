@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -132,10 +133,14 @@ app.get('/api/foodsearch', async (req, res) => {
   if (!q) return res.json({ products: [] });
   try {
     const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=20&fields=product_name,brands,nutriments,serving_size`;
-    const r = await fetch(url);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const r = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
     const data = await r.json();
     res.json(data);
   } catch (e) {
+    console.error('Food search error:', e.message);
     res.status(502).json({ error: 'Food search unavailable', products: [] });
   }
 });
