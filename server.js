@@ -127,16 +127,23 @@ app.put('/api/settings', (req, res) => {
 });
 
 // ── Food Search Proxy ─────────────────────────────
-// Simple in-memory cache: { [query]: { ts, data } }
+// OFF rate limit: 10 req/min — enforce ≥7s between actual API calls (leaves headroom)
 const _foodCache = new Map();
-const FOOD_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const FOOD_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const OFF_MIN_INTERVAL = 7000;          // ms between real OFF calls
+let _lastOFFCall = 0;
 
 async function fetchOFF(q) {
   const key = q.toLowerCase().trim();
   const cached = _foodCache.get(key);
   if (cached && Date.now() - cached.ts < FOOD_CACHE_TTL) return cached.data;
 
-  // v2 API is far more reliable than the legacy CGI endpoint (/cgi/search.pl → 503s)
+  // Rate-limit: wait out the remaining gap before we're allowed to call OFF again
+  const gap = (_lastOFFCall + OFF_MIN_INTERVAL) - Date.now();
+  if (gap > 0) await new Promise(r => setTimeout(r, gap));
+  _lastOFFCall = Date.now();
+
+  // v2 API — /cgi/search.pl returns 503 under load
   const url = `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(q)}&page_size=20&fields=product_name,brands,nutriments,serving_size&json=true`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -144,9 +151,7 @@ async function fetchOFF(q) {
   try {
     const r = await fetch(url, {
       signal: controller.signal,
-      headers: {
-        'User-Agent': 'FitTrack/1.0 (https://github.com/dalt0n0/FitTrack; self-hosted)'
-      }
+      headers: { 'User-Agent': 'FitTrack/1.0 (https://github.com/dalt0n0/FitTrack; self-hosted)' }
     });
     if (!r.ok) throw new Error(`OFF HTTP ${r.status}`);
     data = await r.json();
@@ -154,7 +159,7 @@ async function fetchOFF(q) {
     clearTimeout(timeout);
   }
   _foodCache.set(key, { ts: Date.now(), data });
-  if (_foodCache.size > 200) {
+  if (_foodCache.size > 300) {
     const oldest = [..._foodCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0][0];
     _foodCache.delete(oldest);
   }
@@ -164,19 +169,16 @@ async function fetchOFF(q) {
 app.get('/api/foodsearch', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json({ products: [] });
-  let lastErr;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
-      const data = await fetchOFF(q);
-      return res.json(data);
-    } catch (e) {
-      lastErr = e;
-      console.error(`[foodsearch] attempt ${attempt + 1} failed: ${e.message}`);
-    }
+  // Tell the browser never to cache this — stale cached responses were causing
+  // "same results no matter what you type"
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const data = await fetchOFF(q);
+    return res.json(data);
+  } catch (e) {
+    console.error('[foodsearch] failed:', e.message);
+    res.status(502).json({ error: e.message || 'Food search unavailable', products: [] });
   }
-  console.error('[foodsearch] all attempts failed:', lastErr?.message);
-  res.status(502).json({ error: lastErr?.message || 'Food search unavailable', products: [] });
 });
 
 // Quick connectivity test — hit this from the server to verify OFF is reachable

@@ -1225,7 +1225,7 @@ function debouncedFoodSearch(){
   clearTimeout(_foodSearchTimer);
   // Abort any in-flight request immediately so old results don't land after new ones
   if(_foodSearchController){_foodSearchController.abort();_foodSearchController=null;}
-  _foodSearchTimer=setTimeout(runFoodSearch,350);
+  _foodSearchTimer=setTimeout(runFoodSearch,800);
 }
 
 async function runFoodSearch(){
