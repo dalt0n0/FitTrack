@@ -35,45 +35,9 @@ For auto-restart during development:
 npm run dev
 ```
 
-## Deploying on Linux
-
-### 1. Install Node.js
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-```
-
-### 2. Run with PM2
-```bash
-sudo npm install -g pm2
-pm2 start server.js --name fittrack
-pm2 save && pm2 startup
-```
-
-### 3. Nginx reverse proxy
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-### 4. HTTPS (optional, requires a domain)
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d yourdomain.com
-```
-
 ## Data
 
-All data is stored in `data/db.json`. This file is excluded from git — back it up regularly. To move it outside the project directory, update `DB_PATH` in `server.js`.
+All data is stored in `data/db.json`. To move it outside the project directory, update `DB_PATH` in `server.js`.
 
 ## License
 
