@@ -150,29 +150,17 @@ function fdcToOFF(f) {
   const serving = f.servingSize || 100;
   const unit    = (f.servingSizeUnit || 'g').toLowerCase();
 
-  // FDC documentation:
-  //   Branded       → nutrients are per serving size
-  //   Foundation    → nutrients are per 100g
-  //   SR Legacy     → nutrients are per 100g
-  // We always store calories/macros as *per-serving* so the qty panel math works.
-  const isBranded = f.dataType === 'Branded';
-  const factor  = isBranded ? 1 : (serving / 100);
+  // The FDC /foods/search endpoint returns nutrients per 100g for ALL food types
+  // (Branded, Foundation, SR Legacy). The per-serving behavior only applies to
+  // the individual /food/{fdcId} detail endpoint, not search results.
+  const factor = serving / 100;
 
-  const cal  = Math.round(getNutrient(1008) * factor);
-  const prot = Math.round(getNutrient(1003) * factor * 10) / 10;
-  const carb = Math.round(getNutrient(1005) * factor * 10) / 10;
-  const fat  = Math.round(getNutrient(1004) * factor * 10) / 10;
-
-  // Sanity-check: if calories look impossibly high for the serving size, the raw
-  // value is probably per 100g even though FDC flagged it as Branded.
-  // Heuristic: >25 kcal/g is unrealistic for any whole food.
-  const calPerG = serving > 0 ? cal / serving : 0;
-  const adjusted = calPerG > 25 ? {
-    cal:  Math.round(getNutrient(1008) * (serving / 100)),
-    prot: Math.round(getNutrient(1003) * (serving / 100) * 10) / 10,
-    carb: Math.round(getNutrient(1005) * (serving / 100) * 10) / 10,
-    fat:  Math.round(getNutrient(1004) * (serving / 100) * 10) / 10,
-  } : { cal, prot, carb, fat };
+  const adjusted = {
+    cal:  Math.round(getNutrient(1008) * factor),
+    prot: Math.round(getNutrient(1003) * factor * 10) / 10,
+    carb: Math.round(getNutrient(1005) * factor * 10) / 10,
+    fat:  Math.round(getNutrient(1004) * factor * 10) / 10,
+  };
 
   return {
     product_name: (f.description || 'Unknown').replace(/,\s*/g, ' '),
