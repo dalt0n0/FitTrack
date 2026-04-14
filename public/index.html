@@ -1222,7 +1222,13 @@ function renderPlan(){
         <div class="section-title">${esc(plan.name)}</div>
         ${plan.subtitle ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(plan.subtitle)}</div>` : ''}
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="enterPlanEdit()">Edit Plan</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="exportPlan()">Export Plan</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('plan-import-file').click()">Import Plan</button>
+        <button class="btn btn-ghost btn-sm" onclick="downloadPlanTemplate()">Template</button>
+        <input type="file" id="plan-import-file" accept=".json" style="display:none;" onchange="importPlan(this)">
+        <button class="btn btn-ghost btn-sm" onclick="enterPlanEdit()">Edit Plan</button>
+      </div>
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
@@ -1358,6 +1364,63 @@ async function savePlanEdit(){
     showToast('Plan saved!');
     renderPlan();
   } catch(e){ showToast('Error saving plan'); }
+}
+
+function exportPlan(){
+  const plan = state.plan || DEFAULT_PLAN;
+  const blob = new Blob([JSON.stringify(plan, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'fittrack-plan.json';
+  a.click();
+}
+
+async function importPlan(input){
+  const file = input.files[0];
+  if(!file) return;
+  try {
+    const text = await file.text();
+    const plan = JSON.parse(text);
+    if(!plan.name || !Array.isArray(plan.days)) throw new Error('Invalid plan format');
+    state.plan = await api('PUT', '/api/plan', plan);
+    activePlanDay = 0;
+    showToast('Plan imported!');
+    renderPlan();
+  } catch(e){ showToast('Import failed — invalid plan file'); }
+  input.value = '';
+}
+
+function downloadPlanTemplate(){
+  const template = {
+    name: 'My Workout Plan',
+    subtitle: 'e.g. Push/Pull/Legs · Mon / Wed / Fri',
+    days: [
+      {
+        id: 1,
+        name: 'Day A',
+        focus: 'e.g. full body — lower body emphasis',
+        cardio: 'e.g. 20 min incline treadmill walk',
+        exercises: [
+          { id: 1, name: 'Exercise name', sets: 3, reps: '10', rest: '90s', category: 'push', tip: 'Optional form tip' },
+          { id: 2, name: 'Exercise name', sets: 3, reps: '12', rest: '60s', category: 'pull', tip: '' }
+        ]
+      },
+      {
+        id: 2,
+        name: 'Day B',
+        focus: 'e.g. full body — upper body emphasis',
+        cardio: '',
+        exercises: [
+          { id: 1, name: 'Exercise name', sets: 3, reps: '10', rest: '90s', category: 'legs', tip: '' }
+        ]
+      }
+    ]
+  };
+  const blob = new Blob([JSON.stringify(template, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'fittrack-plan-template.json';
+  a.click();
 }
 
 // ════════════════════════════════════════════════
