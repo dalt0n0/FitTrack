@@ -11,7 +11,7 @@ function readDB() {
   try {
     return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
   } catch {
-    return { workouts: [], bodyStats: [], nutrition: [], customFoods: [], settings: null, plan: null };
+    return { workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], settings: null, plan: null };
   }
 }
 
@@ -24,7 +24,7 @@ if (!fs.existsSync(path.dirname(DB_PATH))) {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 }
 if (!fs.existsSync(DB_PATH)) {
-  writeDB({ workouts: [], bodyStats: [], nutrition: [], customFoods: [], settings: null, plan: null });
+  writeDB({ workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], settings: null, plan: null });
 }
 
 // ── Middleware ───────────────────────────────────
@@ -38,6 +38,7 @@ app.get('/api/data', (req, res) => {
   const db = readDB();
   if (!db.settings) db.settings = { calories: 1850, protein: 200, carbs: 160, fat: 55, targetWeight: 220, height: '6\'1"' };
   if (!db.customFoods) db.customFoods = [];
+  if (!db.recipes) db.recipes = [];
   res.json(db);
 });
 
@@ -232,6 +233,39 @@ app.delete('/api/customfoods/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Recipes ──────────────────────────────────────
+app.get('/api/recipes', (req, res) => {
+  const db = readDB();
+  res.json(db.recipes || []);
+});
+
+app.post('/api/recipes', (req, res) => {
+  const db = readDB();
+  if (!db.recipes) db.recipes = [];
+  const recipe = { id: Date.now(), createdAt: new Date().toISOString().slice(0, 10), ...req.body };
+  db.recipes.push(recipe);
+  writeDB(db);
+  res.json(recipe);
+});
+
+app.put('/api/recipes/:id', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  const idx = (db.recipes || []).findIndex(r => r.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'Not found' });
+  db.recipes[idx] = { ...req.body, id };
+  writeDB(db);
+  res.json(db.recipes[idx]);
+});
+
+app.delete('/api/recipes/:id', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  db.recipes = (db.recipes || []).filter(r => r.id !== id);
+  writeDB(db);
+  res.json({ ok: true });
+});
+
 // ── Plan ─────────────────────────────────────────
 app.get('/api/plan', (req, res) => {
   res.json(readDB().plan || null);
@@ -252,12 +286,13 @@ app.get('/api/export', (req, res) => {
 });
 
 app.post('/api/import', (req, res) => {
-  const { workouts, bodyStats, nutrition, customFoods, settings, plan } = req.body;
+  const { workouts, bodyStats, nutrition, customFoods, recipes, settings, plan } = req.body;
   writeDB({
     workouts: workouts || [],
     bodyStats: bodyStats || [],
     nutrition: nutrition || [],
     customFoods: customFoods || [],
+    recipes: recipes || [],
     settings: settings || null,
     plan: plan || null
   });
