@@ -35,6 +35,23 @@ For auto-restart during development:
 npm run dev
 ```
 
+## Food Search
+
+Nutrition search is powered by the [USDA FoodData Central](https://fdc.nal.usda.gov/) API (700k+ foods, branded + generic). A free API key is required.
+
+1. Sign up at https://fdc.nal.usda.gov/api-key-signup.html — instant, no credit card
+2. Add your key to `ecosystem.config.js`:
+
+```js
+env: {
+  FDC_API_KEY: 'your_key_here'
+}
+```
+
+3. Restart the app: `pm2 start ecosystem.config.js && pm2 save`
+
+Without a key the app falls back to `DEMO_KEY`, which is limited to 30 req/hr and 50 req/day.
+
 ## Data
 
 All data is stored in `data/db.json`. To move it outside the project directory, update `DB_PATH` in `server.js`.
