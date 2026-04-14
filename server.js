@@ -126,12 +126,40 @@ app.put('/api/settings', (req, res) => {
   res.json(db.settings);
 });
 
-// ── Food Search Proxy ─────────────────────────────
-// OFF rate limit: 10 req/min — enforce ≥7s between actual OFF calls
+// ── Food Search — USDA FoodData Central ──────────────────────────────────────
+// Free API key (1000 req/hr): https://fdc.nal.usda.gov/api-key-signup.html
+// Set via env:  FDC_API_KEY=your_key pm2 restart fittrack
+// Or edit the fallback string below.
+const FDC_API_KEY = process.env.FDC_API_KEY || 'DEMO_KEY';
+
 const _foodCache = new Map();
-const FOOD_CACHE_TTL = 10 * 60 * 1000;
-const OFF_MIN_INTERVAL = 7000;
-let _lastOFFCall = 0;
+const FOOD_CACHE_TTL = 10 * 60 * 1000; // 10 min
+
+// Normalize a USDA FDC food item into the same shape parseOFFProduct() expects
+function fdcToOFF(f) {
+  const getNutrient = (id) => {
+    const n = (f.foodNutrients || []).find(n => n.nutrientId === id);
+    return n ? (n.value || 0) : 0;
+  };
+  // FDC branded foods report nutrients per serving; Foundation/SR Legacy per 100g.
+  // Expose as _serving fields so parseOFFProduct() picks them up directly.
+  const serving = f.servingSize || 100;
+  const unit    = (f.servingSizeUnit || 'g').toLowerCase();
+  const isBranded = f.dataType === 'Branded';
+  const factor  = isBranded ? 1 : (serving / 100); // scale 100g values to serving size
+
+  return {
+    product_name: (f.description || 'Unknown').replace(/,\s*/g, ' '),
+    brands:       f.brandOwner || f.brandName || '',
+    serving_size: `${serving}${unit}`,
+    nutriments: {
+      'energy-kcal_serving': Math.round(getNutrient(1008) * factor),
+      'proteins_serving':    Math.round(getNutrient(1003) * factor * 10) / 10,
+      'carbohydrates_serving': Math.round(getNutrient(1005) * factor * 10) / 10,
+      'fat_serving':         Math.round(getNutrient(1004) * factor * 10) / 10,
+    }
+  };
+}
 
 app.get('/api/foodsearch', async (req, res) => {
   const q = (req.query.q || '').trim();
@@ -141,34 +169,23 @@ app.get('/api/foodsearch', async (req, res) => {
   const key = q.toLowerCase();
   const cached = _foodCache.get(key);
   if (cached && Date.now() - cached.ts < FOOD_CACHE_TTL) {
-    console.log(`[foodsearch] CACHE HIT "${q}" (${cached.data.products?.length ?? 0} products)`);
+    console.log(`[foodsearch] cache hit "${q}" (${cached.data.products.length} products)`);
     return res.json(cached.data);
   }
 
-  // Rate-limit gate
-  const gap = (_lastOFFCall + OFF_MIN_INTERVAL) - Date.now();
-  if (gap > 0) {
-    console.log(`[foodsearch] rate-limit wait ${gap}ms for "${q}"`);
-    await new Promise(r => setTimeout(r, gap));
-  }
-  _lastOFFCall = Date.now();
-
-  const url = `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(q)}&page_size=20&fields=product_name,brands,nutriments,serving_size&json=true`;
-  console.log(`[foodsearch] → OFF "${q}"`);
+  const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(q)}&api_key=${FDC_API_KEY}&pageSize=20&dataType=Branded,Foundation,SR%20Legacy`;
+  console.log(`[foodsearch] → FDC "${q}"`);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const r = await fetch(url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'FitTrack/1.0 (https://github.com/dalt0n0/FitTrack; self-hosted)' }
-    });
+    const r = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
-    if (!r.ok) throw new Error(`OFF HTTP ${r.status}`);
-    const data = await r.json();
-    const count = data.products?.length ?? 0;
-    const firstName = data.products?.[0]?.product_name ?? 'n/a';
-    console.log(`[foodsearch] ← "${q}" got ${count} products, first="${firstName}"`);
+    if (!r.ok) throw new Error(`FDC HTTP ${r.status}`);
+    const raw = await r.json();
+    const products = (raw.foods || []).map(fdcToOFF);
+    console.log(`[foodsearch] ← "${q}" ${products.length} results, first="${products[0]?.product_name ?? 'none'}"`);
+    const data = { products };
     _foodCache.set(key, { ts: Date.now(), data });
     if (_foodCache.size > 300) {
       const oldest = [..._foodCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0][0];
@@ -178,20 +195,7 @@ app.get('/api/foodsearch', async (req, res) => {
   } catch (e) {
     clearTimeout(timeout);
     console.error(`[foodsearch] ERROR "${q}": ${e.message}`);
-    res.status(502).json({ error: e.message || 'Food search unavailable', products: [] });
-  }
-});
-
-// Quick connectivity test — hit this from the server to verify OFF is reachable
-app.get('/api/foodsearch/test', async (req, res) => {
-  try {
-    const r = await fetch('https://world.openfoodfacts.org/api/v2/search?search_terms=apple&page_size=1&fields=product_name&json=true', {
-      headers: { 'User-Agent': 'FitTrack/1.0 (connectivity-test)' }
-    });
-    const text = await r.text();
-    res.json({ status: r.status, ok: r.ok, bodySnippet: text.slice(0, 200) });
-  } catch (e) {
-    res.status(502).json({ error: e.message, stack: e.stack });
+    res.status(502).json({ error: e.message, products: [] });
   }
 });
 
