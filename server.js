@@ -19,17 +19,23 @@ function writeDB(data) {
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
 
-// Ensure data dir and db file exist
+const IMAGES_DIR = path.join(__dirname, 'data', 'images');
+
+// Ensure data dir, images dir, and db file exist
 if (!fs.existsSync(path.dirname(DB_PATH))) {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+}
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
 }
 if (!fs.existsSync(DB_PATH)) {
   writeDB({ workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], settings: null, plan: null });
 }
 
 // ── Middleware ───────────────────────────────────
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // allow base64 image uploads
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/api/images', express.static(IMAGES_DIR));
 
 // ── Routes ───────────────────────────────────────
 
@@ -84,8 +90,50 @@ app.post('/api/bodystats', (req, res) => {
 app.delete('/api/bodystats/:id', (req, res) => {
   const db = readDB();
   const id = parseInt(req.params.id);
+  // Clean up photo file if it exists
+  const entry = db.bodyStats.find(e => e.id === id);
+  if (entry?.imageFile) {
+    try { fs.unlinkSync(path.join(IMAGES_DIR, entry.imageFile)); } catch {}
+  }
   db.bodyStats = db.bodyStats.filter(e => e.id !== id);
   writeDB(db);
+  res.json({ ok: true });
+});
+
+app.post('/api/bodystats/:id/image', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  const idx = db.bodyStats.findIndex(e => e.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'Not found' });
+
+  const { imageData } = req.body;
+  const match = (imageData || '').match(/^data:image\/(\w+);base64,(.+)$/s);
+  if (!match) return res.status(400).json({ error: 'Invalid image data' });
+
+  const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+  const filename = `bs_${id}.${ext}`;
+  // Remove old file if different extension
+  const old = db.bodyStats[idx].imageFile;
+  if (old && old !== filename) {
+    try { fs.unlinkSync(path.join(IMAGES_DIR, old)); } catch {}
+  }
+  fs.writeFileSync(path.join(IMAGES_DIR, filename), Buffer.from(match[2], 'base64'));
+  db.bodyStats[idx].imageFile = filename;
+  writeDB(db);
+  res.json({ imageFile: filename });
+});
+
+app.delete('/api/bodystats/:id/image', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  const idx = db.bodyStats.findIndex(e => e.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'Not found' });
+  const filename = db.bodyStats[idx].imageFile;
+  if (filename) {
+    try { fs.unlinkSync(path.join(IMAGES_DIR, filename)); } catch {}
+    db.bodyStats[idx].imageFile = null;
+    writeDB(db);
+  }
   res.json({ ok: true });
 });
 
