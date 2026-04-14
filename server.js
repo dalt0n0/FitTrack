@@ -136,7 +136,8 @@ async function fetchOFF(q) {
   const cached = _foodCache.get(key);
   if (cached && Date.now() - cached.ts < FOOD_CACHE_TTL) return cached.data;
 
-  const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=20&fields=product_name,brands,nutriments,serving_size`;
+  // v2 API is far more reliable than the legacy CGI endpoint (/cgi/search.pl → 503s)
+  const url = `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(q)}&page_size=20&fields=product_name,brands,nutriments,serving_size&json=true`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   let data;
@@ -181,7 +182,7 @@ app.get('/api/foodsearch', async (req, res) => {
 // Quick connectivity test — hit this from the server to verify OFF is reachable
 app.get('/api/foodsearch/test', async (req, res) => {
   try {
-    const r = await fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms=apple&search_simple=1&action=process&json=1&page_size=1&fields=product_name', {
+    const r = await fetch('https://world.openfoodfacts.org/api/v2/search?search_terms=apple&page_size=1&fields=product_name&json=true', {
       headers: { 'User-Agent': 'FitTrack/1.0 (connectivity-test)' }
     });
     const text = await r.text();
