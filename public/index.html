@@ -1221,6 +1221,7 @@ function openFoodSearch(mode='log'){
   _selectedFood=null;
   document.getElementById('food-search-input').value='';
   document.getElementById('food-search-results').innerHTML='';
+  document.getElementById('food-search-results').style.display='';
   document.getElementById('food-search-status').textContent='';
   document.getElementById('food-qty-panel').style.display='none';
   document.getElementById('food-search-modal-title').textContent = mode==='recipe' ? 'Add Ingredient' : 'Add Food';
@@ -1319,6 +1320,7 @@ async function runFoodSearch(){
 function renderFoodResults(results){
   window._foodSearchResults=results;
   const el=document.getElementById('food-search-results');
+  el.style.display='';  // always un-hide — selectFood() sets display:none, must be cleared on next render
   if(!results.length){el.innerHTML='';return;}
   el.innerHTML=results.map((f,i)=>`
     <div class="food-result" onclick="selectFood(${i})">
