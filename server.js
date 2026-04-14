@@ -139,28 +139,83 @@ const FOOD_CACHE_TTL = 10 * 60 * 1000; // 10 min
 // Normalize a USDA FDC food item into the same shape parseOFFProduct() expects
 function fdcToOFF(f) {
   const getNutrient = (id) => {
-    const n = (f.foodNutrients || []).find(n => n.nutrientId === id);
-    return n ? (n.value || 0) : 0;
+    // FDC can have multiple entries per nutrient ID (different derivation methods).
+    // Prefer the one with the highest confidence / smallest derivation code,
+    // but practically just take the first non-zero value.
+    const match = (f.foodNutrients || []).find(n => n.nutrientId === id && (n.value || 0) > 0)
+                || (f.foodNutrients || []).find(n => n.nutrientId === id);
+    return match ? (match.value || 0) : 0;
   };
-  // FDC branded foods report nutrients per serving; Foundation/SR Legacy per 100g.
-  // Expose as _serving fields so parseOFFProduct() picks them up directly.
+
   const serving = f.servingSize || 100;
   const unit    = (f.servingSizeUnit || 'g').toLowerCase();
+
+  // FDC documentation:
+  //   Branded       → nutrients are per serving size
+  //   Foundation    → nutrients are per 100g
+  //   SR Legacy     → nutrients are per 100g
+  // We always store calories/macros as *per-serving* so the qty panel math works.
   const isBranded = f.dataType === 'Branded';
-  const factor  = isBranded ? 1 : (serving / 100); // scale 100g values to serving size
+  const factor  = isBranded ? 1 : (serving / 100);
+
+  const cal  = Math.round(getNutrient(1008) * factor);
+  const prot = Math.round(getNutrient(1003) * factor * 10) / 10;
+  const carb = Math.round(getNutrient(1005) * factor * 10) / 10;
+  const fat  = Math.round(getNutrient(1004) * factor * 10) / 10;
+
+  // Sanity-check: if calories look impossibly high for the serving size, the raw
+  // value is probably per 100g even though FDC flagged it as Branded.
+  // Heuristic: >25 kcal/g is unrealistic for any whole food.
+  const calPerG = serving > 0 ? cal / serving : 0;
+  const adjusted = calPerG > 25 ? {
+    cal:  Math.round(getNutrient(1008) * (serving / 100)),
+    prot: Math.round(getNutrient(1003) * (serving / 100) * 10) / 10,
+    carb: Math.round(getNutrient(1005) * (serving / 100) * 10) / 10,
+    fat:  Math.round(getNutrient(1004) * (serving / 100) * 10) / 10,
+  } : { cal, prot, carb, fat };
 
   return {
     product_name: (f.description || 'Unknown').replace(/,\s*/g, ' '),
     brands:       f.brandOwner || f.brandName || '',
     serving_size: `${serving}${unit}`,
     nutriments: {
-      'energy-kcal_serving': Math.round(getNutrient(1008) * factor),
-      'proteins_serving':    Math.round(getNutrient(1003) * factor * 10) / 10,
-      'carbohydrates_serving': Math.round(getNutrient(1005) * factor * 10) / 10,
-      'fat_serving':         Math.round(getNutrient(1004) * factor * 10) / 10,
+      'energy-kcal_serving':   adjusted.cal,
+      'proteins_serving':      adjusted.prot,
+      'carbohydrates_serving': adjusted.carb,
+      'fat_serving':           adjusted.fat,
     }
   };
 }
+
+// Debug endpoint — returns raw FDC data + normalized output side-by-side
+// Usage: /api/foodsearch/debug?q=chicken+breast
+app.get('/api/foodsearch/debug', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json({ error: 'provide ?q=' });
+  const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(q)}&api_key=${FDC_API_KEY}&pageSize=5&dataType=Branded,Foundation,SR%20Legacy`;
+  try {
+    const r = await fetch(url);
+    const raw = await r.json();
+    const debug = (raw.foods || []).map(f => {
+      const keyNutrients = (f.foodNutrients || [])
+        .filter(n => [1008,1003,1005,1004].includes(n.nutrientId))
+        .map(n => ({ id: n.nutrientId, name: n.nutrientName, value: n.value, unit: n.unitName }));
+      return {
+        fdcId: f.fdcId,
+        description: f.description,
+        dataType: f.dataType,
+        brandOwner: f.brandOwner,
+        servingSize: f.servingSize,
+        servingSizeUnit: f.servingSizeUnit,
+        rawNutrients: keyNutrients,
+        normalized: fdcToOFF(f).nutriments,
+      };
+    });
+    res.json(debug);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
 
 app.get('/api/foodsearch', async (req, res) => {
   const q = (req.query.q || '').trim();
