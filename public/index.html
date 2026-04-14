@@ -161,6 +161,31 @@ select option { background: var(--surface2); }
 .gap-12r { gap: 12px; }
 .align-center { align-items: center; }
 .justify-between { justify-content: space-between; }
+
+/* ── MODALS ── */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:1000; display:flex; align-items:center; justify-content:center; padding:16px; }
+.modal { background:var(--surface); border:1px solid var(--border2); border-radius:var(--r); width:100%; max-width:560px; max-height:82vh; display:flex; flex-direction:column; }
+.modal-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.modal-title { font-size:15px; font-weight:600; color:var(--text); }
+.modal-body { flex:1; overflow-y:auto; padding:16px 20px; }
+.modal-tabs { display:flex; gap:6px; margin-bottom:14px; }
+.modal-tab { padding:6px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--border2); background:var(--surface2); color:var(--text-muted); font-family:inherit; transition:all 0.15s; }
+.modal-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+/* ── FOOD SEARCH ── */
+.food-result { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s; }
+.food-result:last-child { border-bottom:none; }
+.food-result:hover { background:var(--surface2); border-radius:6px; padding-left:8px; padding-right:8px; margin:0 -8px; }
+.food-result-info { flex:1; min-width:0; }
+.food-result-name { font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.food-result-brand { font-size:11px; color:var(--text-muted); margin-top:1px; }
+.food-result-macros { display:flex; gap:8px; font-size:11px; flex-shrink:0; }
+
+/* ── FOOD LOG CHIPS ── */
+.food-chip { display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:6px; }
+.food-chip-name { flex:1; font-size:13px; font-weight:500; color:var(--text); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.food-chip-macros { font-size:11px; color:var(--text-muted); flex-shrink:0; }
+.food-log-total { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-top:1px solid var(--border); margin-top:4px; font-size:13px; font-weight:600; }
 </style>
 </head>
 <body>
@@ -355,36 +380,21 @@ select option { background: var(--surface2); }
 
   <div class="grid-2" style="align-items:start;">
     <div>
-      <div class="section-header"><div class="section-title">Log Nutrition</div></div>
-      <div class="form-card">
-        <div class="form-row" style="margin-bottom:14px;">
+      <div class="section-header"><div class="section-title">Nutrition</div></div>
+      <div class="form-card" style="margin-bottom:16px;">
+        <div class="form-row" style="margin-bottom:12px;">
           <div class="form-group">
             <label>Date</label>
-            <input type="date" id="nut-date">
-          </div>
-          <div class="form-group">
-            <label>Calories</label>
-            <input type="number" id="nut-cals" placeholder="1850">
+            <input type="date" id="nut-date" onchange="onNutDateChange()">
           </div>
         </div>
-        <div class="form-row" style="margin-bottom:14px;">
-          <div class="form-group">
-            <label>Protein (g)</label>
-            <input type="number" id="nut-protein" placeholder="200">
-          </div>
-          <div class="form-group">
-            <label>Carbs (g)</label>
-            <input type="number" id="nut-carbs" placeholder="160">
-          </div>
-          <div class="form-group">
-            <label>Fat (g)</label>
-            <input type="number" id="nut-fat" placeholder="55">
-          </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="openFoodSearch()">+ Add Food</button>
+          <button class="btn btn-ghost" onclick="openCustomFoods()">My Foods</button>
         </div>
-        <button class="btn btn-primary" onclick="saveNutrition()">Save Entry</button>
       </div>
 
-      <div class="section-header mt-24"><div class="section-title">Today's Goals</div></div>
+      <div class="section-header"><div class="section-title">Daily Goals</div></div>
       <div class="card">
         <div class="macro-bar-row">
           <div class="macro-bar-header"><span class="macro-bar-name">Protein</span><span class="macro-bar-vals" id="nut-protein-vals">—</span></div>
@@ -408,25 +418,110 @@ select option { background: var(--surface2); }
     <div>
       <div class="section-header"><div class="section-title">Calorie History (14 days)</div></div>
       <div class="chart-card" style="margin-bottom:16px;">
-        <div class="chart-wrap" style="height:200px;">
-          <canvas id="cal-chart"></canvas>
-        </div>
+        <div class="chart-wrap" style="height:200px;"><canvas id="cal-chart"></canvas></div>
       </div>
       <div class="section-header"><div class="section-title">Macro Breakdown (7-day avg)</div></div>
       <div class="chart-card">
         <div class="grid-2" style="align-items:center;gap:0;">
-          <div class="chart-wrap" style="height:160px;">
-            <canvas id="macro-donut"></canvas>
-          </div>
+          <div class="chart-wrap" style="height:160px;"><canvas id="macro-donut"></canvas></div>
           <div id="macro-legend" style="padding-left:12px;"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="section-header mt-24"><div class="section-title">Nutrition Log</div></div>
-  <div id="nut-history">
-    <div class="empty"><div class="empty-icon">🥗</div><div class="empty-text">No nutrition logged yet</div></div>
+  <div class="section-header mt-24">
+    <div><div class="section-title">Food Log</div><div class="section-sub" id="nut-log-date-label"></div></div>
+  </div>
+  <div id="nut-food-log">
+    <div class="empty"><div class="empty-icon">🥗</div><div class="empty-text">No foods logged for this day</div></div>
+  </div>
+
+  <div class="section-header mt-24"><div class="section-title">Nutrition History</div></div>
+  <div id="nut-history"></div>
+</div>
+
+<!-- ═══ FOOD SEARCH MODAL ═══ -->
+<div id="food-search-modal" class="modal-overlay" style="display:none;" onclick="closeFoodSearchOnBackdrop(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add Food</div>
+      <button class="btn-icon" onclick="closeFoodSearch()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-tabs">
+        <button class="modal-tab active" id="food-tab-db" onclick="setSearchTab('db')">Open Food Facts</button>
+        <button class="modal-tab" id="food-tab-custom" onclick="setSearchTab('custom')">My Foods</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <input type="text" id="food-search-input" placeholder="Search foods..." oninput="debouncedFoodSearch()" style="flex:1;">
+      </div>
+      <div id="food-search-status" style="font-size:12px;color:var(--text-muted);min-height:18px;margin-bottom:6px;"></div>
+      <div id="food-search-results"></div>
+      <div id="food-qty-panel" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-top:8px;">
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;" id="food-qty-name"></div>
+        <div class="form-row" style="margin-bottom:10px;">
+          <div class="form-group">
+            <label>Serving Size</label>
+            <div id="food-qty-serving" style="font-size:13px;padding:9px 12px;background:var(--surface3);border-radius:6px;color:var(--text-muted);"></div>
+          </div>
+          <div class="form-group">
+            <label>Quantity (servings)</label>
+            <input type="number" id="food-qty-input" value="1" min="0.1" step="0.1" oninput="updateQtyPreview()">
+          </div>
+        </div>
+        <div id="food-qty-preview" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;padding:8px 10px;background:var(--surface3);border-radius:6px;"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="confirmAddFood()">Add to Log</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelFoodSelect()">← Back</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CUSTOM FOODS MODAL ═══ -->
+<div id="custom-foods-modal" class="modal-overlay" style="display:none;" onclick="closeCustomFoodsOnBackdrop(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">My Foods</div>
+      <button class="btn-icon" onclick="closeCustomFoods()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-card" style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px;" id="cf-form-title">New Food</div>
+        <div class="form-row" style="margin-bottom:10px;">
+          <div class="form-group" style="flex:2;">
+            <label>Name</label>
+            <input type="text" id="cf-name" placeholder="e.g. My Protein Shake">
+          </div>
+          <div class="form-group">
+            <label>Brand</label>
+            <input type="text" id="cf-brand" placeholder="Optional">
+          </div>
+        </div>
+        <div class="form-row" style="margin-bottom:10px;">
+          <div class="form-group" style="flex:2;">
+            <label>Serving Size</label>
+            <input type="text" id="cf-serving" placeholder="e.g. scoop (30g)">
+          </div>
+          <div class="form-group">
+            <label>Calories</label>
+            <input type="number" id="cf-cals" placeholder="120">
+          </div>
+        </div>
+        <div class="form-row" style="margin-bottom:12px;">
+          <div class="form-group"><label>Protein (g)</label><input type="number" id="cf-protein" placeholder="24"></div>
+          <div class="form-group"><label>Carbs (g)</label><input type="number" id="cf-carbs" placeholder="4"></div>
+          <div class="form-group"><label>Fat (g)</label><input type="number" id="cf-fat" placeholder="1.5"></div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="saveCustomFood()">Save Food</button>
+          <button class="btn btn-ghost btn-sm" onclick="resetCustomFoodForm()">Clear</button>
+        </div>
+      </div>
+      <div id="custom-foods-list"></div>
+    </div>
   </div>
 </div>
 
@@ -545,7 +640,7 @@ select option { background: var(--surface2); }
 // ════════════════════════════════════════════════
 // STATE — in-memory cache, loaded once from server
 // ════════════════════════════════════════════════
-let state = { workouts: [], bodyStats: [], nutrition: [], settings: { calories:1850, protein:200, carbs:160, fat:55, targetWeight:220, height:'6\'1"' }, plan: null };
+let state = { workouts: [], bodyStats: [], nutrition: [], customFoods: [], settings: { calories:1850, protein:200, carbs:160, fat:55, targetWeight:220, height:'6\'1"' }, plan: null };
 
 // ════════════════════════════════════════════════
 // API HELPERS
@@ -936,91 +1031,386 @@ async function deleteBodyStat(id){
 // ════════════════════════════════════════════════
 // NUTRITION
 // ════════════════════════════════════════════════
-function renderNutrition(){
-  document.getElementById('nut-date').value = today();
-  const {nutrition, settings} = state;
-  const todayNut = nutrition.find(n=>n.date===today());
-  if(todayNut) setMacroBars('nut', todayNut, settings);
 
-  const last14 = [];
-  for(let i=13;i>=0;i--){
-    const d = new Date(); d.setDate(d.getDate()-i);
-    const ds = d.toISOString().slice(0,10);
-    const entry = nutrition.find(n=>n.date===ds);
-    last14.push({ date:ds, cals: entry?.calories||0 });
-  }
-  makeBarChart('cal-chart',
-    last14.map(e=>fmtDate(e.date)),
-    [{ data:last14.map(e=>e.cals), backgroundColor: last14.map(e=>e.cals>=settings.calories?'rgba(34,197,94,0.7)':'rgba(249,115,22,0.7)'), borderRadius:4 }]
-  );
-
-  const last7 = nutrition.filter(n=>{
-    const d = new Date(n.date+'T12:00:00'); const now = new Date();
-    return (now-d) <= 7*24*60*60*1000;
-  });
-  if(last7.length>0){
-    const avgP = Math.round(last7.reduce((s,n)=>s+(n.protein||0),0)/last7.length);
-    const avgC = Math.round(last7.reduce((s,n)=>s+(n.carbs||0),0)/last7.length);
-    const avgF = Math.round(last7.reduce((s,n)=>s+(n.fat||0),0)/last7.length);
-    makeDonut('macro-donut',['Protein','Carbs','Fat'],[avgP*4, avgC*4, avgF*9],['#f97316','#60a5fa','#a78bfa']);
-    document.getElementById('macro-legend').innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <div style="font-size:12px;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f97316;margin-right:6px;"></span>Protein: ${avgP}g avg</div>
-        <div style="font-size:12px;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#60a5fa;margin-right:6px;"></span>Carbs: ${avgC}g avg</div>
-        <div style="font-size:12px;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#a78bfa;margin-right:6px;"></span>Fat: ${avgF}g avg</div>
-      </div>
-    `;
-  }
-
-  const el = document.getElementById('nut-history');
-  if(nutrition.length===0){ el.innerHTML='<div class="empty"><div class="empty-icon">🥗</div><div class="empty-text">No nutrition logged yet</div></div>'; return; }
-  const sorted = [...nutrition].sort((a,b)=>b.date.localeCompare(a.date));
-  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">` + sorted.map(n=>{
-    const pct = Math.round(clamp((n.calories/settings.calories)*100,0,150));
-    const col = n.calories<=settings.calories ? 'var(--green)' : 'var(--red)';
-    return `
-      <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-        <div>
-          <div class="card-label">${fmtDate(n.date)}</div>
-          <div style="font-size:20px;font-weight:700;letter-spacing:-0.5px;color:${col};">${n.calories}<span style="font-size:12px;font-weight:400;color:var(--text-muted);"> kcal</span></div>
-        </div>
-        <div style="display:flex;gap:16px;font-size:13px;">
-          <div><span style="color:var(--accent);font-weight:700;">${n.protein||'—'}</span><span style="color:var(--text-dim)">g pro</span></div>
-          <div><span style="color:var(--blue);font-weight:700;">${n.carbs||'—'}</span><span style="color:var(--text-dim)">g carb</span></div>
-          <div><span style="color:var(--purple);font-weight:700;">${n.fat||'—'}</span><span style="color:var(--text-dim)">g fat</span></div>
-        </div>
-        <button class="btn-icon" onclick="deleteNutrition('${n.date}')">✕</button>
-      </div>`;
-  }).join('') + '</div>';
+// ── Helpers ──────────────────────────────────────
+function computeTotals(foods){
+  return (foods||[]).reduce((acc,f)=>{
+    acc.calories += Math.round((f.calories||0)*f.quantity);
+    acc.protein  += Math.round((f.protein||0) *f.quantity*10)/10;
+    acc.carbs    += Math.round((f.carbs||0)   *f.quantity*10)/10;
+    acc.fat      += Math.round((f.fat||0)     *f.quantity*10)/10;
+    return acc;
+  },{calories:0,protein:0,carbs:0,fat:0});
 }
 
-async function saveNutrition(){
-  const date = document.getElementById('nut-date').value;
-  const cals = parseInt(document.getElementById('nut-cals').value);
-  const protein = parseInt(document.getElementById('nut-protein').value)||0;
-  const carbs = parseInt(document.getElementById('nut-carbs').value)||0;
-  const fat = parseInt(document.getElementById('nut-fat').value)||0;
-  if(!date||!cals){ showToast('Enter date and calories at minimum'); return; }
+function parseOFFProduct(p){
+  const n = p.nutriments||{};
+  return {
+    name: (p.product_name||'Unknown').trim()||'Unknown',
+    brand: (p.brands||'').split(',')[0].trim()||null,
+    servingSize: p.serving_size||'100g',
+    calories: Math.round(n['energy-kcal_serving']||n['energy-kcal_100g']||(n['energy_serving']?n['energy_serving']/4.184:0)||0),
+    protein:  Math.round(((n['proteins_serving']     ||n['proteins_100g']     ||0))*10)/10,
+    carbs:    Math.round(((n['carbohydrates_serving'] ||n['carbohydrates_100g']||0))*10)/10,
+    fat:      Math.round(((n['fat_serving']           ||n['fat_100g']          ||0))*10)/10,
+    source:'openfoodfacts'
+  };
+}
 
-  try {
-    const entry = await api('POST', '/api/nutrition', { date, calories:cals, protein, carbs, fat });
-    const existing = state.nutrition.findIndex(n=>n.date===date);
-    if(existing>=0) state.nutrition[existing]=entry; else state.nutrition.push(entry);
-    document.getElementById('nut-cals').value='';
-    document.getElementById('nut-protein').value='';
-    document.getElementById('nut-carbs').value='';
-    document.getElementById('nut-fat').value='';
-    showToast('Nutrition logged!');
-    renderNutrition();
-  } catch(e) { showToast('Error saving nutrition'); }
+// ── Render ───────────────────────────────────────
+function renderNutrition(){
+  const dateEl = document.getElementById('nut-date');
+  if(!dateEl.value) dateEl.value = today();
+  renderNutCharts();
+  renderNutForDate(dateEl.value);
+  renderNutHistory();
+}
+
+function onNutDateChange(){
+  renderNutForDate(document.getElementById('nut-date').value);
+}
+
+function renderNutForDate(date){
+  const {nutrition, settings} = state;
+  document.getElementById('nut-log-date-label').textContent = fmtDate(date);
+  const entry = nutrition.find(n=>n.date===date);
+  const totals = entry ? {calories:entry.calories||0,protein:entry.protein||0,carbs:entry.carbs||0,fat:entry.fat||0} : {calories:0,protein:0,carbs:0,fat:0};
+  if(entry) setMacroBars('nut', totals, settings);
+  else {
+    ['protein','carbs','fat'].forEach(k=>{ const b=document.getElementById(`nut-${k}-bar`); if(b) b.style.width='0%'; const v=document.getElementById(`nut-${k}-vals`); if(v) v.textContent='—'; });
+    const cb=document.getElementById('nut-cal-bar'); if(cb) cb.style.width='0%';
+    const cv=document.getElementById('nut-cal-vals'); if(cv) cv.textContent='—';
+  }
+  renderNutFoodLog(date, entry);
+}
+
+function renderNutFoodLog(date, entry){
+  const el = document.getElementById('nut-food-log');
+  if(!entry){
+    el.innerHTML='<div class="empty"><div class="empty-icon">🥗</div><div class="empty-text">No foods logged for this day</div></div>';
+    return;
+  }
+  if(!entry.foods){
+    const col = entry.calories<=(state.settings.calories||1850)?'var(--green)':'var(--red)';
+    el.innerHTML=`<div class="card" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <div><div class="card-label">Legacy entry — totals only</div>
+      <div style="font-size:20px;font-weight:700;color:${col};">${entry.calories}<span style="font-size:12px;font-weight:400;color:var(--text-muted);"> kcal</span></div></div>
+      <div style="display:flex;gap:16px;font-size:13px;">
+        <div><span style="color:var(--accent);font-weight:700;">${entry.protein||0}</span><span style="color:var(--text-dim)">g pro</span></div>
+        <div><span style="color:var(--blue);font-weight:700;">${entry.carbs||0}</span><span style="color:var(--text-dim)">g carb</span></div>
+        <div><span style="color:var(--purple);font-weight:700;">${entry.fat||0}</span><span style="color:var(--text-dim)">g fat</span></div>
+      </div>
+      <button class="btn-icon" onclick="deleteNutrition('${date}')">✕</button>
+    </div>`;
+    return;
+  }
+  if(entry.foods.length===0){
+    el.innerHTML='<div class="empty"><div class="empty-icon">🥗</div><div class="empty-text">No foods logged for this day</div></div>';
+    return;
+  }
+  const totals = computeTotals(entry.foods);
+  const chips = entry.foods.map(f=>`
+    <div class="food-chip">
+      <div class="food-chip-name">${esc(f.name)}${f.quantity!==1?` <span style="color:var(--text-dim);font-size:11px;">×${f.quantity}</span>`:''}</div>
+      <div class="food-chip-macros">${Math.round(f.calories*f.quantity)} kcal · ${Math.round(f.protein*f.quantity*10)/10}g P · ${Math.round(f.carbs*f.quantity*10)/10}g C · ${Math.round(f.fat*f.quantity*10)/10}g F</div>
+      <button class="btn-icon" onclick="removeFoodFromLog('${date}',${f.id})" style="flex-shrink:0;">✕</button>
+    </div>
+  `).join('');
+  const col = totals.calories<=(state.settings.calories||1850)?'var(--green)':'var(--red)';
+  el.innerHTML = chips + `
+    <div class="food-log-total">
+      <span style="color:var(--text-muted);">Total — ${entry.foods.length} item${entry.foods.length!==1?'s':''}</span>
+      <span style="color:${col};">${totals.calories} kcal &nbsp;·&nbsp; <span style="color:var(--accent)">${totals.protein}g P</span> &nbsp;·&nbsp; <span style="color:var(--blue)">${totals.carbs}g C</span> &nbsp;·&nbsp; <span style="color:var(--purple)">${totals.fat}g F</span></span>
+    </div>`;
+}
+
+function renderNutCharts(){
+  const {nutrition, settings} = state;
+  const last14=[];
+  for(let i=13;i>=0;i--){
+    const d=new Date(); d.setDate(d.getDate()-i);
+    const ds=d.toISOString().slice(0,10);
+    const entry=nutrition.find(n=>n.date===ds);
+    last14.push({date:ds,cals:entry?.calories||0});
+  }
+  makeBarChart('cal-chart',last14.map(e=>fmtDate(e.date)),[{data:last14.map(e=>e.cals),backgroundColor:last14.map(e=>e.cals>=settings.calories?'rgba(34,197,94,0.7)':'rgba(249,115,22,0.7)'),borderRadius:4}]);
+
+  const last7=nutrition.filter(n=>{const d=new Date(n.date+'T12:00:00');return(new Date()-d)<=7*24*60*60*1000;});
+  if(last7.length>0){
+    const avgP=Math.round(last7.reduce((s,n)=>s+(n.protein||0),0)/last7.length);
+    const avgC=Math.round(last7.reduce((s,n)=>s+(n.carbs||0),0)/last7.length);
+    const avgF=Math.round(last7.reduce((s,n)=>s+(n.fat||0),0)/last7.length);
+    makeDonut('macro-donut',['Protein','Carbs','Fat'],[avgP*4,avgC*4,avgF*9],['#f97316','#60a5fa','#a78bfa']);
+    document.getElementById('macro-legend').innerHTML=`<div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-size:12px;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f97316;margin-right:6px;"></span>Protein: ${avgP}g avg</div>
+      <div style="font-size:12px;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#60a5fa;margin-right:6px;"></span>Carbs: ${avgC}g avg</div>
+      <div style="font-size:12px;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#a78bfa;margin-right:6px;"></span>Fat: ${avgF}g avg</div>
+    </div>`;
+  }
+}
+
+function renderNutHistory(){
+  const {nutrition,settings}=state;
+  const el=document.getElementById('nut-history');
+  if(nutrition.length===0){el.innerHTML='<div class="empty"><div class="empty-icon">🥗</div><div class="empty-text">No nutrition logged yet</div></div>';return;}
+  const sorted=[...nutrition].sort((a,b)=>b.date.localeCompare(a.date));
+  el.innerHTML='<div style="display:flex;flex-direction:column;gap:10px;">'+sorted.map(n=>{
+    const col=n.calories<=(settings.calories||1850)?'var(--green)':'var(--red)';
+    const itemBadge=n.foods?`<span class="badge badge-blue" style="margin-left:8px;">${n.foods.length} item${n.foods.length!==1?'s':''}</span>`:'';
+    return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div><div class="card-label">${fmtDate(n.date)}${itemBadge}</div>
+      <div style="font-size:20px;font-weight:700;letter-spacing:-0.5px;color:${col};">${n.calories}<span style="font-size:12px;font-weight:400;color:var(--text-muted);"> kcal</span></div></div>
+      <div style="display:flex;gap:16px;font-size:13px;">
+        <div><span style="color:var(--accent);font-weight:700;">${n.protein||'—'}</span><span style="color:var(--text-dim)">g pro</span></div>
+        <div><span style="color:var(--blue);font-weight:700;">${n.carbs||'—'}</span><span style="color:var(--text-dim)">g carb</span></div>
+        <div><span style="color:var(--purple);font-weight:700;">${n.fat||'—'}</span><span style="color:var(--text-dim)">g fat</span></div>
+      </div>
+      <button class="btn-icon" onclick="deleteNutrition('${n.date}')">✕</button>
+    </div>`;
+  }).join('')+'</div>';
 }
 
 async function deleteNutrition(date){
   try {
-    await api('DELETE', `/api/nutrition/${date}`);
-    state.nutrition = state.nutrition.filter(n=>n.date!==date);
+    await api('DELETE',`/api/nutrition/${date}`);
+    state.nutrition=state.nutrition.filter(n=>n.date!==date);
     renderNutrition();
-  } catch(e) { showToast('Error deleting entry'); }
+  } catch(e){showToast('Error deleting entry');}
+}
+
+async function removeFoodFromLog(date, foodId){
+  const entry = state.nutrition.find(n=>n.date===date);
+  if(!entry||!entry.foods) return;
+  entry.foods = entry.foods.filter(f=>f.id!==foodId);
+  if(entry.foods.length===0){
+    await deleteNutrition(date); return;
+  }
+  const totals = computeTotals(entry.foods);
+  const updated = {...entry,...totals};
+  try {
+    const saved = await api('POST','/api/nutrition',updated);
+    const idx = state.nutrition.findIndex(n=>n.date===date);
+    if(idx>=0) state.nutrition[idx]=saved;
+    renderNutrition();
+  } catch(e){showToast('Error removing food');}
+}
+
+// ── Food Search Modal ─────────────────────────────
+let _foodSearchTab = 'db';
+let _foodSearchTimer = null;
+let _selectedFood = null;
+
+function openFoodSearch(){
+  _selectedFood=null;
+  document.getElementById('food-search-input').value='';
+  document.getElementById('food-search-results').innerHTML='';
+  document.getElementById('food-search-status').textContent='';
+  document.getElementById('food-qty-panel').style.display='none';
+  document.getElementById('food-search-modal').style.display='flex';
+  setSearchTab('db');
+  requestAnimationFrame(()=>document.getElementById('food-search-input').focus());
+}
+function closeFoodSearch(){ document.getElementById('food-search-modal').style.display='none'; }
+function closeFoodSearchOnBackdrop(e){ if(e.target===document.getElementById('food-search-modal')) closeFoodSearch(); }
+
+function setSearchTab(tab){
+  _foodSearchTab=tab;
+  document.getElementById('food-tab-db').classList.toggle('active',tab==='db');
+  document.getElementById('food-tab-custom').classList.toggle('active',tab==='custom');
+  if(document.getElementById('food-search-input').value.trim()) runFoodSearch();
+}
+
+function debouncedFoodSearch(){
+  clearTimeout(_foodSearchTimer);
+  _foodSearchTimer=setTimeout(runFoodSearch,300);
+}
+
+async function runFoodSearch(){
+  const q=document.getElementById('food-search-input').value.trim();
+  const statusEl=document.getElementById('food-search-status');
+  const resultsEl=document.getElementById('food-search-results');
+  if(!q){resultsEl.innerHTML='';statusEl.textContent='';return;}
+  if(_foodSearchTab==='custom'){
+    const matches=(state.customFoods||[]).filter(f=>f.name.toLowerCase().includes(q.toLowerCase())||(f.brand||'').toLowerCase().includes(q.toLowerCase()));
+    statusEl.textContent=matches.length?`${matches.length} result${matches.length!==1?'s':''} in My Foods`:'No custom foods match';
+    renderFoodResults(matches.map(f=>({...f,source:'custom'})));
+    return;
+  }
+  statusEl.textContent='Searching...';
+  try {
+    const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=20&fields=product_name,brands,nutriments,serving_size`;
+    const res=await fetch(url);
+    const data=await res.json();
+    const products=(data.products||[]).filter(p=>p.product_name);
+    const results=products.map(parseOFFProduct).filter(f=>f.name!=='Unknown');
+    statusEl.textContent=results.length?`${results.length} result${results.length!==1?'s':''}`:'No results found';
+    renderFoodResults(results);
+  } catch(e){
+    statusEl.textContent='Search unavailable — check your connection';
+    resultsEl.innerHTML='';
+  }
+}
+
+function renderFoodResults(results){
+  window._foodSearchResults=results;
+  const el=document.getElementById('food-search-results');
+  if(!results.length){el.innerHTML='';return;}
+  el.innerHTML=results.map((f,i)=>`
+    <div class="food-result" onclick="selectFood(${i})">
+      <div class="food-result-info">
+        <div class="food-result-name">${esc(f.name)}</div>
+        ${f.brand?`<div class="food-result-brand">${esc(f.brand)}</div>`:''}
+      </div>
+      <div class="food-result-macros">
+        <span style="color:var(--green)">${f.calories} kcal</span>
+        <span style="color:var(--accent)">${f.protein}g P</span>
+        <span style="color:var(--blue)">${f.carbs}g C</span>
+        <span style="color:var(--purple)">${f.fat}g F</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectFood(i){
+  _selectedFood={...(window._foodSearchResults[i])};
+  document.getElementById('food-search-results').style.display='none';
+  document.getElementById('food-search-status').textContent='';
+  document.getElementById('food-qty-panel').style.display='block';
+  document.getElementById('food-qty-name').textContent=_selectedFood.name+(_selectedFood.brand?` — ${_selectedFood.brand}`:'');
+  document.getElementById('food-qty-serving').textContent=_selectedFood.servingSize||'1 serving';
+  document.getElementById('food-qty-input').value='1';
+  updateQtyPreview();
+}
+
+function updateQtyPreview(){
+  if(!_selectedFood) return;
+  const qty=parseFloat(document.getElementById('food-qty-input').value)||1;
+  const cal=Math.round(_selectedFood.calories*qty);
+  const pro=Math.round(_selectedFood.protein*qty*10)/10;
+  const carb=Math.round(_selectedFood.carbs*qty*10)/10;
+  const fat=Math.round(_selectedFood.fat*qty*10)/10;
+  document.getElementById('food-qty-preview').textContent=`${cal} kcal  ·  ${pro}g protein  ·  ${carb}g carbs  ·  ${fat}g fat`;
+}
+
+function cancelFoodSelect(){
+  _selectedFood=null;
+  document.getElementById('food-qty-panel').style.display='none';
+  document.getElementById('food-search-results').style.display='block';
+}
+
+async function confirmAddFood(){
+  if(!_selectedFood) return;
+  const qty=Math.max(0.1,parseFloat(document.getElementById('food-qty-input').value)||1);
+  const date=document.getElementById('nut-date').value;
+  if(!date){showToast('Select a date first');return;}
+
+  const foodEntry={id:Date.now(),..._selectedFood,quantity:qty};
+  let entry=state.nutrition.find(n=>n.date===date);
+  let wasLegacy=false;
+  if(!entry){
+    entry={date,foods:[foodEntry]};
+  } else if(!entry.foods){
+    wasLegacy=true;
+    entry={date,foods:[foodEntry]};
+  } else {
+    entry={...entry,foods:[...entry.foods,foodEntry]};
+  }
+  const totals=computeTotals(entry.foods);
+  const toSave={...entry,...totals};
+  try {
+    const saved=await api('POST','/api/nutrition',toSave);
+    const idx=state.nutrition.findIndex(n=>n.date===date);
+    if(idx>=0) state.nutrition[idx]=saved; else state.nutrition.push(saved);
+    closeFoodSearch();
+    renderNutrition();
+    if(wasLegacy) showToast('Food logged! (previous manual totals replaced)');
+    else showToast('Food logged!');
+  } catch(e){showToast('Error logging food');}
+}
+
+// ── Custom Foods Modal ────────────────────────────
+let _cfEditingId = null;
+
+function openCustomFoods(){
+  resetCustomFoodForm();
+  renderCustomFoodsList();
+  document.getElementById('custom-foods-modal').style.display='flex';
+}
+function closeCustomFoods(){ document.getElementById('custom-foods-modal').style.display='none'; }
+function closeCustomFoodsOnBackdrop(e){ if(e.target===document.getElementById('custom-foods-modal')) closeCustomFoods(); }
+
+function renderCustomFoodsList(){
+  const el=document.getElementById('custom-foods-list');
+  const foods=state.customFoods||[];
+  if(!foods.length){el.innerHTML='<div class="empty" style="padding:24px 0;"><div class="empty-icon">📦</div><div class="empty-text">No custom foods yet</div></div>';return;}
+  el.innerHTML='<div style="display:flex;flex-direction:column;gap:8px;">'+foods.map(f=>`
+    <div class="card" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${esc(f.name)}${f.brand?` <span style="color:var(--text-muted);font-weight:400;">${esc(f.brand)}</span>`:''}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${esc(f.servingSize||'—')} · ${f.calories} kcal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="editCustomFood(${f.id})">Edit</button>
+      <button class="btn-icon" onclick="deleteCustomFood(${f.id})">✕</button>
+    </div>
+  `).join('')+'</div>';
+}
+
+function editCustomFood(id){
+  const f=(state.customFoods||[]).find(f=>f.id===id);
+  if(!f) return;
+  _cfEditingId=id;
+  document.getElementById('cf-form-title').textContent='Edit Food';
+  document.getElementById('cf-name').value=f.name||'';
+  document.getElementById('cf-brand').value=f.brand||'';
+  document.getElementById('cf-serving').value=f.servingSize||'';
+  document.getElementById('cf-cals').value=f.calories||'';
+  document.getElementById('cf-protein').value=f.protein||'';
+  document.getElementById('cf-carbs').value=f.carbs||'';
+  document.getElementById('cf-fat').value=f.fat||'';
+}
+
+function resetCustomFoodForm(){
+  _cfEditingId=null;
+  document.getElementById('cf-form-title').textContent='New Food';
+  ['cf-name','cf-brand','cf-serving','cf-cals','cf-protein','cf-carbs','cf-fat'].forEach(id=>document.getElementById(id).value='');
+}
+
+async function saveCustomFood(){
+  const name=document.getElementById('cf-name').value.trim();
+  if(!name){showToast('Food needs a name');return;}
+  const food={
+    name,
+    brand:document.getElementById('cf-brand').value.trim()||null,
+    servingSize:document.getElementById('cf-serving').value.trim()||'1 serving',
+    calories:parseFloat(document.getElementById('cf-cals').value)||0,
+    protein:parseFloat(document.getElementById('cf-protein').value)||0,
+    carbs:parseFloat(document.getElementById('cf-carbs').value)||0,
+    fat:parseFloat(document.getElementById('cf-fat').value)||0,
+  };
+  try {
+    if(_cfEditingId){
+      const saved=await api('PUT',`/api/customfoods/${_cfEditingId}`,food);
+      const idx=(state.customFoods||[]).findIndex(f=>f.id===_cfEditingId);
+      if(idx>=0) state.customFoods[idx]=saved;
+      showToast('Food updated!');
+    } else {
+      const saved=await api('POST','/api/customfoods',food);
+      if(!state.customFoods) state.customFoods=[];
+      state.customFoods.push(saved);
+      showToast('Food saved!');
+    }
+    resetCustomFoodForm();
+    renderCustomFoodsList();
+  } catch(e){showToast('Error saving food');}
+}
+
+async function deleteCustomFood(id){
+  if(!confirm('Delete this food?')) return;
+  try {
+    await api('DELETE',`/api/customfoods/${id}`);
+    state.customFoods=(state.customFoods||[]).filter(f=>f.id!==id);
+    renderCustomFoodsList();
+  } catch(e){showToast('Error deleting food');}
 }
 
 // ════════════════════════════════════════════════
@@ -1143,7 +1533,7 @@ async function importData(input){
 
 async function clearData(){
   if(!confirm('This will delete ALL your data. Are you sure?')) return;
-  await api('POST', '/api/import', { workouts:[], bodyStats:[], nutrition:[], settings:null, plan:null });
+  await api('POST', '/api/import', { workouts:[], bodyStats:[], nutrition:[], customFoods:[], settings:null, plan:null });
   state = await api('GET', '/api/data');
   showToast('All data cleared');
   renderDashboard();

@@ -11,7 +11,7 @@ function readDB() {
   try {
     return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
   } catch {
-    return { workouts: [], bodyStats: [], nutrition: [], settings: null, plan: null };
+    return { workouts: [], bodyStats: [], nutrition: [], customFoods: [], settings: null, plan: null };
   }
 }
 
@@ -24,7 +24,7 @@ if (!fs.existsSync(path.dirname(DB_PATH))) {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 }
 if (!fs.existsSync(DB_PATH)) {
-  writeDB({ workouts: [], bodyStats: [], nutrition: [], settings: null, plan: null });
+  writeDB({ workouts: [], bodyStats: [], nutrition: [], customFoods: [], settings: null, plan: null });
 }
 
 // ── Middleware ───────────────────────────────────
@@ -36,9 +36,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // GET all data (initial load)
 app.get('/api/data', (req, res) => {
   const db = readDB();
-  if (!db.settings) {
-    db.settings = { calories: 1850, protein: 200, carbs: 160, fat: 55, targetWeight: 220, height: '6\'1"' };
-  }
+  if (!db.settings) db.settings = { calories: 1850, protein: 200, carbs: 160, fat: 55, targetWeight: 220, height: '6\'1"' };
+  if (!db.customFoods) db.customFoods = [];
   res.json(db);
 });
 
@@ -127,6 +126,39 @@ app.put('/api/settings', (req, res) => {
   res.json(db.settings);
 });
 
+// ── Custom Foods ─────────────────────────────────
+app.get('/api/customfoods', (req, res) => {
+  const db = readDB();
+  res.json(db.customFoods || []);
+});
+
+app.post('/api/customfoods', (req, res) => {
+  const db = readDB();
+  if (!db.customFoods) db.customFoods = [];
+  const food = { id: Date.now(), createdAt: new Date().toISOString().slice(0, 10), ...req.body };
+  db.customFoods.push(food);
+  writeDB(db);
+  res.json(food);
+});
+
+app.put('/api/customfoods/:id', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  const idx = (db.customFoods || []).findIndex(f => f.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'Not found' });
+  db.customFoods[idx] = { ...req.body, id };
+  writeDB(db);
+  res.json(db.customFoods[idx]);
+});
+
+app.delete('/api/customfoods/:id', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  db.customFoods = (db.customFoods || []).filter(f => f.id !== id);
+  writeDB(db);
+  res.json({ ok: true });
+});
+
 // ── Plan ─────────────────────────────────────────
 app.get('/api/plan', (req, res) => {
   res.json(readDB().plan || null);
@@ -147,11 +179,12 @@ app.get('/api/export', (req, res) => {
 });
 
 app.post('/api/import', (req, res) => {
-  const { workouts, bodyStats, nutrition, settings, plan } = req.body;
+  const { workouts, bodyStats, nutrition, customFoods, settings, plan } = req.body;
   writeDB({
     workouts: workouts || [],
     bodyStats: bodyStats || [],
     nutrition: nutrition || [],
+    customFoods: customFoods || [],
     settings: settings || null,
     plan: plan || null
   });
