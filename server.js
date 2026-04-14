@@ -11,7 +11,7 @@ function readDB() {
   try {
     return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
   } catch {
-    return { workouts: [], bodyStats: [], nutrition: [], settings: null };
+    return { workouts: [], bodyStats: [], nutrition: [], settings: null, plan: null };
   }
 }
 
@@ -24,7 +24,7 @@ if (!fs.existsSync(path.dirname(DB_PATH))) {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 }
 if (!fs.existsSync(DB_PATH)) {
-  writeDB({ workouts: [], bodyStats: [], nutrition: [], settings: null });
+  writeDB({ workouts: [], bodyStats: [], nutrition: [], settings: null, plan: null });
 }
 
 // ── Middleware ───────────────────────────────────
@@ -127,6 +127,18 @@ app.put('/api/settings', (req, res) => {
   res.json(db.settings);
 });
 
+// ── Plan ─────────────────────────────────────────
+app.get('/api/plan', (req, res) => {
+  res.json(readDB().plan || null);
+});
+
+app.put('/api/plan', (req, res) => {
+  const db = readDB();
+  db.plan = req.body;
+  writeDB(db);
+  res.json(db.plan);
+});
+
 // ── Export / Import ──────────────────────────────
 app.get('/api/export', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="fittrack-backup.json"');
@@ -135,12 +147,13 @@ app.get('/api/export', (req, res) => {
 });
 
 app.post('/api/import', (req, res) => {
-  const { workouts, bodyStats, nutrition, settings } = req.body;
+  const { workouts, bodyStats, nutrition, settings, plan } = req.body;
   writeDB({
     workouts: workouts || [],
     bodyStats: bodyStats || [],
     nutrition: nutrition || [],
-    settings: settings || null
+    settings: settings || null,
+    plan: plan || null
   });
   res.json({ ok: true });
 });

@@ -174,6 +174,7 @@ select option { background: var(--surface2); }
   <button class="nav-tab" onclick="showTab('bodystats',this)">Body Stats</button>
   <button class="nav-tab" onclick="showTab('nutrition',this)">Nutrition</button>
   <button class="nav-tab" onclick="showTab('progress',this)">Progress</button>
+  <button class="nav-tab" onclick="showTab('plan',this)">Plan</button>
   <button class="nav-tab" onclick="showTab('settings',this)">Settings</button>
 </div>
 
@@ -534,6 +535,9 @@ select option { background: var(--surface2); }
   </div>
 </div>
 
+<!-- ═══ PLAN ═══ -->
+<div id="tab-plan" class="panel"></div>
+
 </div><!-- /content -->
 </div><!-- /app -->
 
@@ -541,7 +545,7 @@ select option { background: var(--surface2); }
 // ════════════════════════════════════════════════
 // STATE — in-memory cache, loaded once from server
 // ════════════════════════════════════════════════
-let state = { workouts: [], bodyStats: [], nutrition: [], settings: { calories:1850, protein:200, carbs:160, fat:55, targetWeight:220, height:'6\'1"' } };
+let state = { workouts: [], bodyStats: [], nutrition: [], settings: { calories:1850, protein:200, carbs:160, fat:55, targetWeight:220, height:'6\'1"' }, plan: null };
 
 // ════════════════════════════════════════════════
 // API HELPERS
@@ -580,6 +584,7 @@ function showTab(id, btn){
   if(id==='progress') renderProgress();
   if(id==='settings') loadSettingsUI();
   if(id==='workouts') renderWorkoutHistory();
+  if(id==='plan') renderPlan();
 }
 
 // ════════════════════════════════════════════════
@@ -1138,10 +1143,221 @@ async function importData(input){
 
 async function clearData(){
   if(!confirm('This will delete ALL your data. Are you sure?')) return;
-  await api('POST', '/api/import', { workouts:[], bodyStats:[], nutrition:[], settings:null });
+  await api('POST', '/api/import', { workouts:[], bodyStats:[], nutrition:[], settings:null, plan:null });
   state = await api('GET', '/api/data');
   showToast('All data cleared');
   renderDashboard();
+}
+
+// ════════════════════════════════════════════════
+// PLAN
+// ════════════════════════════════════════════════
+const DEFAULT_PLAN = {
+  name: 'Planet Fitness — 3-Day Beginner Plan',
+  subtitle: 'Full body · Mon / Wed / Fri · Goal: build muscle, lose fat',
+  days: [
+    {
+      id: 1, name: 'Day A', focus: 'full body — lower body emphasis',
+      cardio: '20 min treadmill incline walk (3.5–4 mph, 5–8% incline) or elliptical. Keep heart rate ~120–140 bpm.',
+      exercises: [
+        {id:1, name:'Smith machine squat', sets:3, reps:'10', rest:'90s', category:'legs', tip:'Bar on upper traps, feet shoulder-width. Squat until thighs are parallel. Start light — form first.'},
+        {id:2, name:'Smith machine bench press', sets:3, reps:'10', rest:'90s', category:'push', tip:'Feet flat on floor, slight arch in lower back. Lower bar to mid-chest and press straight up.'},
+        {id:3, name:'Lat pulldown (wide grip)', sets:3, reps:'10', rest:'90s', category:'pull', tip:'Pull bar to upper chest, squeeze shoulder blades. Control the way back up.'},
+        {id:4, name:'Dumbbell shoulder press', sets:3, reps:'12', rest:'60s', category:'push', tip:'Seated or standing. Press straight overhead, don\'t flare elbows too wide.'},
+        {id:5, name:'Lying leg curl machine', sets:3, reps:'12', rest:'60s', category:'legs', tip:'Slow on the way down (2 seconds). Keep hips pressed into the pad throughout.'},
+        {id:6, name:'Cable tricep pushdown', sets:3, reps:'12', rest:'60s', category:'push', tip:'Elbows pinned to your sides. Extend fully at the bottom, squeeze triceps.'},
+        {id:7, name:'Dumbbell bicep curl', sets:3, reps:'12', rest:'60s', category:'pull', tip:'Don\'t swing — slow and controlled. Supinate wrists at the top for full contraction.'},
+        {id:8, name:'Plank', sets:3, reps:'30–45s', rest:'45s', category:'core', tip:'Neutral spine, brace your core. Don\'t let hips sag.'}
+      ]
+    },
+    {
+      id: 2, name: 'Day B', focus: 'full body — upper body emphasis',
+      cardio: '20 min stationary bike or elliptical at moderate pace. Zone 2 cardio — can hold a conversation.',
+      exercises: [
+        {id:1, name:'Leg press machine', sets:3, reps:'12', rest:'90s', category:'legs', tip:'Feet shoulder-width, mid-plate. Don\'t lock knees out fully. Lower until 90°, drive through heels.'},
+        {id:2, name:'Smith machine incline press', sets:3, reps:'10', rest:'90s', category:'push', tip:'Set bench to 30–45°. Targets upper chest. Lower bar to upper chest, press up and slightly forward.'},
+        {id:3, name:'Seated cable row', sets:3, reps:'10', rest:'90s', category:'pull', tip:'Pull handle to belly button, squeeze shoulder blades. Keep chest tall.'},
+        {id:4, name:'Pec deck / chest fly machine', sets:3, reps:'12', rest:'60s', category:'push', tip:'Great for chest isolation. Bring arms together slowly and control the stretch on the way back out.'},
+        {id:5, name:'Leg extension machine', sets:3, reps:'12', rest:'60s', category:'legs', tip:'Hold the contraction at the top for 1 second. Full range of motion matters.'},
+        {id:6, name:'Dumbbell lateral raise', sets:3, reps:'15', rest:'45s', category:'push', tip:'Slight bend in elbows, raise to shoulder height only. Light weight, slow tempo. Don\'t shrug.'},
+        {id:7, name:'Hammer curl', sets:3, reps:'12', rest:'60s', category:'pull', tip:'Neutral grip (thumbs up). Works biceps and forearms.'},
+        {id:8, name:'Ab machine crunch', sets:3, reps:'15', rest:'45s', category:'core', tip:'Exhale as you crunch, focus on squeezing abs. Slow and deliberate.'}
+      ]
+    },
+    {
+      id: 3, name: 'Day C', focus: 'full body — posterior chain, arms, core',
+      cardio: '25 min Stairmaster or incline treadmill walk. End of week — push a little harder.',
+      exercises: [
+        {id:1, name:'Smith machine Romanian deadlift', sets:3, reps:'10', rest:'90s', category:'legs', tip:'Hinge at hips, soft bend in knees. Bar stays close to legs. Feel the hamstring stretch, then drive hips forward.'},
+        {id:2, name:'Machine chest press', sets:3, reps:'10', rest:'90s', category:'push', tip:'Adjust seat so handles are at mid-chest. Easier to learn pressing mechanics than free weight.'},
+        {id:3, name:'Assisted pull-up or lat pulldown', sets:3, reps:'8–10', rest:'90s', category:'pull', tip:'PF has an assisted pull-up machine. Aim to reduce assistance over time.'},
+        {id:4, name:'Smith machine overhead press', sets:3, reps:'10', rest:'90s', category:'push', tip:'Press straight up from shoulder height. Don\'t lean back excessively — brace core.'},
+        {id:5, name:'Cable face pull', sets:3, reps:'15', rest:'60s', category:'pull', tip:'Cable at head height, rope attachment. Pull toward face with elbows high. Great for rear delts and shoulder health.'},
+        {id:6, name:'Cable overhead tricep extension', sets:3, reps:'12', rest:'60s', category:'push', tip:'Face away from cable. Rope over head, extend arms forward. Great stretch on the tricep long head.'},
+        {id:7, name:'Incline dumbbell curl', sets:3, reps:'12', rest:'60s', category:'pull', tip:'Set bench to 45°, arms hang straight down. Longer range of motion and a deep bicep stretch.'},
+        {id:8, name:'Plank + hip dips', sets:3, reps:'30s + 10 dips', rest:'45s', category:'core', tip:'Hold a plank then rotate hips side to side. Hits obliques and core stability together.'}
+      ]
+    }
+  ]
+};
+
+let activePlanDay = 0;
+let planDraft = null;
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function catBadge(cat){
+  return {push:'badge-orange', pull:'badge-blue', legs:'badge-green', core:'badge-purple'}[cat] || 'badge-orange';
+}
+
+function renderPlan(){
+  const plan = state.plan || DEFAULT_PLAN;
+  const el = document.getElementById('tab-plan');
+  const dayIdx = Math.min(activePlanDay, plan.days.length - 1);
+  const day = plan.days[dayIdx];
+
+  el.innerHTML = `
+    <div class="section-header">
+      <div>
+        <div class="section-title">${esc(plan.name)}</div>
+        ${plan.subtitle ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(plan.subtitle)}</div>` : ''}
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="enterPlanEdit()">Edit Plan</button>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
+      ${plan.days.map((d,i) => `
+        <button class="btn ${i===dayIdx?'btn-primary':'btn-ghost'} btn-sm" onclick="activePlanDay=${i};renderPlan()">${esc(d.name)}</button>
+      `).join('')}
+    </div>
+
+    <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px;">${esc(day.name)}</div>
+    ${day.focus ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">${esc(day.focus)}</div>` : ''}
+
+    ${day.exercises.map(e => `
+      <div class="card" style="margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div>
+            <div style="font-size:14px;font-weight:600;color:var(--text);">${esc(e.name)}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">${esc(e.sets)} sets × ${esc(e.reps)} reps · ${esc(e.rest)} rest</div>
+          </div>
+          <span class="badge ${catBadge(e.category)}">${esc(e.category)}</span>
+        </div>
+        ${e.tip ? `<div style="font-size:12px;color:var(--text-muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">${esc(e.tip)}</div>` : ''}
+      </div>
+    `).join('')}
+
+    ${day.cardio ? `
+      <div style="background:var(--accent-dim);border-radius:var(--r);padding:12px 14px;margin-top:4px;border:1px solid rgba(249,115,22,0.15);">
+        <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px;">Post-workout cardio</div>
+        <div style="font-size:12px;color:var(--text-muted);">${esc(day.cardio)}</div>
+      </div>
+    ` : ''}
+  `;
+}
+
+function enterPlanEdit(){
+  planDraft = JSON.parse(JSON.stringify(state.plan || DEFAULT_PLAN));
+  renderPlanEdit();
+}
+
+function renderPlanEdit(){
+  const el = document.getElementById('tab-plan');
+  el.innerHTML = `
+    <div class="section-header">
+      <div class="section-title">Edit Plan</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="cancelPlanEdit()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="savePlanEdit()">Save Plan</button>
+      </div>
+    </div>
+
+    <div class="form-card" style="margin-bottom:16px;">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Plan Name</label>
+          <input value="${esc(planDraft.name)}" oninput="planDraft.name=this.value" placeholder="Plan name">
+        </div>
+        <div class="form-group">
+          <label>Subtitle</label>
+          <input value="${esc(planDraft.subtitle||'')}" oninput="planDraft.subtitle=this.value" placeholder="e.g. Full body · Mon / Wed / Fri">
+        </div>
+      </div>
+    </div>
+
+    ${planDraft.days.map((day, di) => `
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+          <input value="${esc(day.name)}" oninput="planDraft.days[${di}].name=this.value" placeholder="Day name" style="font-weight:600;width:100px;flex-shrink:0;">
+          <input value="${esc(day.focus||'')}" oninput="planDraft.days[${di}].focus=this.value" placeholder="Focus description" style="flex:1;min-width:140px;">
+          <button class="btn btn-danger btn-sm" onclick="removePlanDay(${di})">Remove Day</button>
+        </div>
+
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">Exercises</div>
+
+        ${day.exercises.map((ex, ei) => `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:8px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+              <input value="${esc(ex.name)}" oninput="planDraft.days[${di}].exercises[${ei}].name=this.value" placeholder="Exercise name" style="flex:1;min-width:160px;">
+              <input value="${esc(String(ex.sets))}" oninput="planDraft.days[${di}].exercises[${ei}].sets=this.value" placeholder="Sets" style="width:54px;" title="Sets">
+              <input value="${esc(ex.reps)}" oninput="planDraft.days[${di}].exercises[${ei}].reps=this.value" placeholder="Reps" style="width:64px;" title="Reps">
+              <input value="${esc(ex.rest)}" oninput="planDraft.days[${di}].exercises[${ei}].rest=this.value" placeholder="Rest" style="width:64px;" title="Rest">
+              <select onchange="planDraft.days[${di}].exercises[${ei}].category=this.value" style="width:84px;">
+                ${['push','pull','legs','core'].map(c=>`<option value="${c}"${ex.category===c?' selected':''}>${c}</option>`).join('')}
+              </select>
+              <button class="btn-icon" onclick="removePlanExercise(${di},${ei})" title="Remove exercise">✕</button>
+            </div>
+            <input value="${esc(ex.tip||'')}" oninput="planDraft.days[${di}].exercises[${ei}].tip=this.value" placeholder="Form tip (optional)" style="width:100%;font-size:12px;color:var(--text-muted);">
+          </div>
+        `).join('')}
+
+        <button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addPlanExercise(${di})">+ Add Exercise</button>
+
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+          <div class="form-group">
+            <label>Post-workout cardio</label>
+            <input value="${esc(day.cardio||'')}" oninput="planDraft.days[${di}].cardio=this.value" placeholder="Cardio note (optional)">
+          </div>
+        </div>
+      </div>
+    `).join('')}
+
+    <button class="btn btn-ghost" onclick="addPlanDay()">+ Add Day</button>
+  `;
+}
+
+function cancelPlanEdit(){ planDraft = null; renderPlan(); }
+
+function addPlanDay(){
+  planDraft.days.push({ id:Date.now(), name:`Day ${planDraft.days.length+1}`, focus:'', cardio:'', exercises:[] });
+  renderPlanEdit();
+}
+
+function removePlanDay(di){
+  if(!confirm('Remove this day?')) return;
+  planDraft.days.splice(di, 1);
+  renderPlanEdit();
+}
+
+function addPlanExercise(di){
+  planDraft.days[di].exercises.push({ id:Date.now(), name:'', sets:3, reps:'10', rest:'60s', category:'push', tip:'' });
+  renderPlanEdit();
+}
+
+function removePlanExercise(di, ei){
+  planDraft.days[di].exercises.splice(ei, 1);
+  renderPlanEdit();
+}
+
+async function savePlanEdit(){
+  if(!planDraft.name.trim()){ showToast('Plan needs a name'); return; }
+  try {
+    state.plan = await api('PUT', '/api/plan', planDraft);
+    planDraft = null;
+    activePlanDay = 0;
+    showToast('Plan saved!');
+    renderPlan();
+  } catch(e){ showToast('Error saving plan'); }
 }
 
 // ════════════════════════════════════════════════
