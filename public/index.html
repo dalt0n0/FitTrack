@@ -1220,9 +1220,12 @@ function setSearchTab(tab){
   if(document.getElementById('food-search-input').value.trim()) runFoodSearch();
 }
 
+let _foodSearchController=null;
 function debouncedFoodSearch(){
   clearTimeout(_foodSearchTimer);
-  _foodSearchTimer=setTimeout(runFoodSearch,300);
+  // Abort any in-flight request immediately so old results don't land after new ones
+  if(_foodSearchController){_foodSearchController.abort();_foodSearchController=null;}
+  _foodSearchTimer=setTimeout(runFoodSearch,350);
 }
 
 async function runFoodSearch(){
@@ -1236,17 +1239,28 @@ async function runFoodSearch(){
     renderFoodResults(matches.map(f=>({...f,source:'custom'})));
     return;
   }
-  statusEl.textContent='Searching...';
+  if(_foodSearchController){_foodSearchController.abort();}
+  _foodSearchController=new AbortController();
+  statusEl.textContent='Searching…';
+  resultsEl.innerHTML='';
   try {
     const url=`/api/foodsearch?q=${encodeURIComponent(q)}`;
-    const res=await fetch(url);
+    const res=await fetch(url,{signal:_foodSearchController.signal});
+    _foodSearchController=null;
     const data=await res.json();
+    if(data.error){
+      statusEl.innerHTML=`Search unavailable — <a href="#" onclick="runFoodSearch();return false;" style="color:var(--accent);">retry</a>`;
+      resultsEl.innerHTML='';
+      return;
+    }
     const products=(data.products||[]).filter(p=>p.product_name);
     const results=products.map(parseOFFProduct).filter(f=>f.name!=='Unknown');
-    statusEl.textContent=results.length?`${results.length} result${results.length!==1?'s':''}`:'No results found';
+    statusEl.textContent=results.length?`${results.length} result${results.length!==1?'s':''}`:'No results found — try different keywords';
     renderFoodResults(results);
   } catch(e){
-    statusEl.textContent='Search unavailable — check your connection';
+    _foodSearchController=null;
+    if(e.name==='AbortError') return; // superseded by a newer search
+    statusEl.innerHTML=`Search unavailable — <a href="#" onclick="runFoodSearch();return false;" style="color:var(--accent);">retry</a>`;
     resultsEl.innerHTML='';
   }
 }

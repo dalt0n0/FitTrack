@@ -127,21 +127,51 @@ app.put('/api/settings', (req, res) => {
 });
 
 // ── Food Search Proxy ─────────────────────────────
-app.get('/api/foodsearch', async (req, res) => {
-  const q = req.query.q;
-  if (!q) return res.json({ products: [] });
+// Simple in-memory cache: { [query]: { ts, data } }
+const _foodCache = new Map();
+const FOOD_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchOFF(q) {
+  const key = q.toLowerCase().trim();
+  const cached = _foodCache.get(key);
+  if (cached && Date.now() - cached.ts < FOOD_CACHE_TTL) return cached.data;
+
+  const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=20&fields=product_name,brands,nutriments,serving_size`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let data;
   try {
-    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=20&fields=product_name,brands,nutriments,serving_size`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
     const r = await fetch(url, { signal: controller.signal });
+    if (!r.ok) throw new Error(`OFF returned ${r.status}`);
+    data = await r.json();
+  } finally {
     clearTimeout(timeout);
-    const data = await r.json();
-    res.json(data);
-  } catch (e) {
-    console.error('Food search error:', e.message);
-    res.status(502).json({ error: 'Food search unavailable', products: [] });
   }
+  _foodCache.set(key, { ts: Date.now(), data });
+  // Evict old entries to prevent unbounded growth
+  if (_foodCache.size > 200) {
+    const oldest = [..._foodCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0][0];
+    _foodCache.delete(oldest);
+  }
+  return data;
+}
+
+app.get('/api/foodsearch', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json({ products: [] });
+  // Retry up to 2 times with a short back-off
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 800));
+      const data = await fetchOFF(q);
+      return res.json(data);
+    } catch (e) {
+      lastErr = e;
+      console.error(`Food search attempt ${attempt + 1} failed:`, e.message);
+    }
+  }
+  res.status(502).json({ error: 'Food search unavailable', products: [] });
 });
 
 // ── Custom Foods ─────────────────────────────────
