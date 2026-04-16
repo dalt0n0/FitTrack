@@ -188,6 +188,8 @@ select option { background: var(--surface2); }
 .food-chip-macros { font-size:11px; color:var(--text-muted); flex-shrink:0; }
 .food-log-total { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-top:1px solid var(--border); margin-top:4px; font-size:13px; font-weight:600; }
 .day-closed-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--surface2); border:1px solid var(--border2); border-radius:6px; margin-bottom:8px; font-size:12px; color:var(--text-muted); }
+.wo-edit-banner { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--accent-dim); border:1px solid var(--accent-glow); border-radius:6px; margin-bottom:12px; font-size:12px; color:var(--accent); }
+.ex-category-pill { display:inline-block; font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px; background:var(--surface3); color:var(--text-muted); }
 .nut-hist-row { cursor:pointer; transition:background 0.1s; }
 .nut-hist-row:hover { background:var(--surface2) !important; }
 .nut-hist-foods { padding:10px 12px 4px; border-top:1px solid var(--border); }
@@ -289,17 +291,27 @@ select option { background: var(--surface2); }
 
 </div>
 
+<!-- datalist shared by all exercise name inputs -->
+<datalist id="exercise-datalist"></datalist>
+
 <!-- ═══ WORKOUTS ═══ -->
 <div id="tab-workouts" class="panel">
 
   <div class="grid-2" style="align-items:start;">
     <div>
-      <div class="section-header"><div class="section-title">Log Workout</div></div>
+      <div class="section-header">
+        <div class="section-title">Log Workout</div>
+        <button class="btn btn-ghost btn-sm" onclick="openExerciseLibrary()">📚 Exercise Library</button>
+      </div>
       <div class="form-card">
+        <div id="wo-edit-banner" style="display:none;" class="wo-edit-banner">
+          <span>Editing existing workout</span>
+          <button class="btn btn-ghost btn-sm" onclick="cancelEditWorkout()">New workout instead</button>
+        </div>
         <div class="form-row" style="margin-bottom:14px;">
           <div class="form-group">
             <label>Date</label>
-            <input type="date" id="wo-date">
+            <input type="date" id="wo-date" onchange="onWoDateChange()">
           </div>
           <div class="form-group">
             <label>Workout Name</label>
@@ -307,9 +319,9 @@ select option { background: var(--surface2); }
           </div>
         </div>
         <div id="exercises-container"></div>
-        <div style="display:flex;gap:10px;margin-top:12px;">
+        <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="addExercise()">+ Add Exercise</button>
-          <button class="btn btn-primary" onclick="saveWorkout()">Save Workout</button>
+          <button class="btn btn-primary" onclick="saveWorkout()" id="wo-save-btn">Save Workout</button>
         </div>
       </div>
     </div>
@@ -319,6 +331,31 @@ select option { background: var(--surface2); }
       <div id="workout-history">
         <div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No workouts logged yet</div></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EXERCISE LIBRARY MODAL ═══ -->
+<div id="exercise-library-modal" class="modal-overlay" style="display:none;" onclick="closeExLibOnBackdrop(event)">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-title">Exercise Library</div>
+      <button class="btn-icon" onclick="closeExerciseLibrary()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-card" style="margin-bottom:14px;">
+        <div class="form-row" style="margin-bottom:10px;">
+          <div class="form-group" style="flex:2;"><label>Exercise Name</label><input type="text" id="exlib-name" placeholder="e.g. Cable Crunch"></div>
+          <div class="form-group"><label>Category</label>
+            <select id="exlib-cat">
+              <option>Legs</option><option>Push</option><option>Pull</option>
+              <option>Core</option><option>Cardio</option><option>Other</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="saveExercise()">Add Exercise</button>
+      </div>
+      <div id="exlib-list"></div>
     </div>
   </div>
 </div>
@@ -661,7 +698,7 @@ select option { background: var(--surface2); }
 // ════════════════════════════════════════════════
 // STATE — in-memory cache, loaded once from server
 // ════════════════════════════════════════════════
-let state = { workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], settings: { calories:1850, protein:200, carbs:160, fat:55, targetWeight:220, height:'6\'1"' }, plan: null };
+let state = { workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], exercises: [], settings: { calories:1850, protein:200, carbs:160, fat:55, targetWeight:220, height:'6\'1"' }, plan: null };
 
 // ════════════════════════════════════════════════
 // API HELPERS
@@ -844,23 +881,105 @@ function setMacroBars(prefix, entry, settings){
 // WORKOUTS
 // ════════════════════════════════════════════════
 let exerciseCount = 0;
+let setCounters = {};
+let _workoutEditingId = null;
 
-function initWorkoutForm(){
-  document.getElementById('wo-date').value = today();
+function updateExerciseDatelist(){
+  const dl = document.getElementById('exercise-datalist');
+  if(!dl) return;
+  // Library names first, then any unique names from existing workouts not in library
+  const libNames = (state.exercises||[]).map(e=>e.name);
+  const woNames  = [...new Set(state.workouts.flatMap(w=>w.exercises.map(e=>e.name)))];
+  const all = [...new Set([...libNames, ...woNames])].sort();
+  dl.innerHTML = all.map(n=>`<option value="${esc(n)}">`).join('');
+}
+
+function initWorkoutForm(keepDate){
+  _workoutEditingId = null;
   exerciseCount = 0;
+  setCounters = {};
+  document.getElementById('wo-edit-banner').style.display = 'none';
+  document.getElementById('wo-save-btn').textContent = 'Save Workout';
+  document.getElementById('wo-name').value = '';
+  if(!keepDate) document.getElementById('wo-date').value = today();
   document.getElementById('exercises-container').innerHTML = '';
   addExercise();
+  updateExerciseDatelist();
+}
+
+function onWoDateChange(){
+  const date = document.getElementById('wo-date').value;
+  if(!date) return;
+  const existing = state.workouts.find(w=>w.date===date);
+  if(existing){
+    loadWorkoutIntoForm(existing);
+  } else {
+    _workoutEditingId = null;
+    document.getElementById('wo-edit-banner').style.display = 'none';
+    document.getElementById('wo-save-btn').textContent = 'Save Workout';
+    exerciseCount = 0; setCounters = {};
+    document.getElementById('wo-name').value = '';
+    document.getElementById('exercises-container').innerHTML = '';
+    addExercise();
+  }
+}
+
+function loadWorkoutIntoForm(w){
+  _workoutEditingId = w.id;
+  exerciseCount = 0; setCounters = {};
+  document.getElementById('wo-date').value = w.date;
+  document.getElementById('wo-name').value = w.name || '';
+  document.getElementById('wo-edit-banner').style.display = 'flex';
+  document.getElementById('wo-save-btn').textContent = 'Update Workout';
+  document.getElementById('exercises-container').innerHTML = '';
+  w.exercises.forEach(ex=>{
+    exerciseCount++;
+    const id = exerciseCount;
+    const div = document.createElement('div');
+    div.className = 'exercise-block'; div.id = `ex-${id}`;
+    div.innerHTML = `
+      <div class="exercise-header">
+        <input class="exercise-name-input" list="exercise-datalist" type="text" placeholder="Exercise name" id="ex-name-${id}" value="${esc(ex.name)}">
+        <button class="btn-icon" onclick="removeExercise(${id})">✕</button>
+      </div>
+      <table class="sets-table">
+        <thead><tr><th>Set</th><th>Reps</th><th>Weight (lbs)</th><th></th></tr></thead>
+        <tbody id="sets-${id}"></tbody>
+      </table>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="addSet(${id})">+ Add Set</button>
+    `;
+    document.getElementById('exercises-container').appendChild(div);
+    setCounters[id] = 0;
+    ex.sets.forEach(s=>{
+      setCounters[id]++;
+      const n = setCounters[id];
+      const tr = document.createElement('tr');
+      tr.id = `set-${id}-${n}`;
+      tr.innerHTML = `
+        <td><div class="set-num">${n}</div></td>
+        <td><input type="number" placeholder="10" min="1" max="100" id="reps-${id}-${n}" value="${s.reps}" style="width:70px;"></td>
+        <td><input type="number" placeholder="0" min="0" step="2.5" id="wt-${id}-${n}" value="${s.weight}" style="width:90px;"></td>
+        <td><button class="btn-icon" onclick="document.getElementById('set-${id}-${n}').remove()">✕</button></td>
+      `;
+      document.getElementById(`sets-${id}`).appendChild(tr);
+    });
+  });
+}
+
+function cancelEditWorkout(){
+  const date = document.getElementById('wo-date').value;
+  initWorkoutForm();
+  document.getElementById('wo-date').value = date;
 }
 
 function addExercise(){
   exerciseCount++;
   const id = exerciseCount;
   const div = document.createElement('div');
-  div.className = 'exercise-block';
-  div.id = `ex-${id}`;
+  div.className = 'exercise-block'; div.id = `ex-${id}`;
   div.innerHTML = `
     <div class="exercise-header">
-      <input class="exercise-name-input" type="text" placeholder="Exercise name (e.g. Smith Machine Squat)" id="ex-name-${id}">
+      <input class="exercise-name-input" list="exercise-datalist" type="text" placeholder="Exercise name" id="ex-name-${id}">
       <button class="btn-icon" onclick="removeExercise(${id})">✕</button>
     </div>
     <table class="sets-table">
@@ -875,7 +994,6 @@ function addExercise(){
 
 function removeExercise(id){ document.getElementById(`ex-${id}`)?.remove(); }
 
-let setCounters = {};
 function addSet(exId){
   if(!setCounters[exId]) setCounters[exId]=0;
   setCounters[exId]++;
@@ -891,36 +1009,54 @@ function addSet(exId){
   document.getElementById(`sets-${exId}`).appendChild(tr);
 }
 
-async function saveWorkout(){
-  const date = document.getElementById('wo-date').value;
-  const name = document.getElementById('wo-name').value || 'Workout';
-  if(!date){ showToast('Please select a date'); return; }
-
+function collectWorkoutExercises(){
   const exercises = [];
   document.querySelectorAll('.exercise-block').forEach(block=>{
     const exId = block.id.replace('ex-','');
     const exName = document.getElementById(`ex-name-${exId}`)?.value?.trim();
     if(!exName) return;
     const sets = [];
-    block.querySelectorAll('tbody tr').forEach((tr)=>{
+    block.querySelectorAll('tbody tr').forEach(tr=>{
       const repsEl = tr.querySelector('[id^="reps-"]');
-      const wtEl = tr.querySelector('[id^="wt-"]');
-      const reps = repsEl ? parseInt(repsEl.value)||0 : 0;
-      const weight = wtEl ? parseFloat(wtEl.value)||0 : 0;
-      if(reps>0) sets.push({reps, weight});
+      const wtEl   = tr.querySelector('[id^="wt-"]');
+      const reps   = repsEl ? parseInt(repsEl.value)||0  : 0;
+      const weight = wtEl   ? parseFloat(wtEl.value)||0  : 0;
+      if(reps>0 || weight>0) sets.push({reps, weight});
     });
     if(sets.length>0) exercises.push({name:exName, sets});
   });
+  return exercises;
+}
 
+async function saveWorkout(){
+  const date = document.getElementById('wo-date').value;
+  const name = document.getElementById('wo-name').value.trim() || 'Workout';
+  if(!date){ showToast('Please select a date'); return; }
+  const exercises = collectWorkoutExercises();
   if(exercises.length===0){ showToast('Add at least one exercise with sets'); return; }
-
+  const payload = { date, name, exercises };
   try {
-    const workout = await api('POST', '/api/workouts', { date, name, exercises });
-    state.workouts.push(workout);
-    showToast('Workout saved!');
+    if(_workoutEditingId){
+      const saved = await api('PUT', `/api/workouts/${_workoutEditingId}`, payload);
+      const idx = state.workouts.findIndex(w=>w.id===_workoutEditingId);
+      if(idx>=0) state.workouts[idx]=saved;
+      showToast('Workout updated!');
+    } else {
+      const saved = await api('POST', '/api/workouts', payload);
+      state.workouts.push(saved);
+      showToast('Workout saved!');
+    }
     initWorkoutForm();
     renderWorkoutHistory();
-  } catch(e) { showToast('Error saving workout'); }
+  } catch(e){ showToast('Error saving workout'); }
+}
+
+function editWorkout(id){
+  const w = state.workouts.find(w=>w.id===id);
+  if(!w) return;
+  loadWorkoutIntoForm(w);
+  // scroll form into view
+  document.getElementById('exercises-container').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function renderWorkoutHistory(){
@@ -933,19 +1069,22 @@ function renderWorkoutHistory(){
       <div class="history-item-header">
         <div>
           <div class="history-date">${fmtDate(w.date)}</div>
-          <div class="history-title">${w.name}</div>
+          <div class="history-title">${esc(w.name)}</div>
           <div class="history-badges">
             <span class="badge badge-orange">${w.exercises.length} exercise${w.exercises.length!==1?'s':''}</span>
             <span class="badge badge-blue">${w.exercises.reduce((s,e)=>s+e.sets.length,0)} sets</span>
           </div>
         </div>
-        <button class="btn-icon" onclick="event.stopPropagation();deleteWorkout(${w.id})">✕</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editWorkout(${w.id})">Edit</button>
+          <button class="btn-icon" onclick="event.stopPropagation();deleteWorkout(${w.id})">✕</button>
+        </div>
       </div>
       <div class="expand-content" id="wo-expand-${w.id}">
         ${w.exercises.map(e=>`
           <div class="ex-detail">
-            <div class="ex-detail-name">${e.name}</div>
-            <div class="ex-detail-sets">${e.sets.map((s,i)=>`Set ${i+1}: ${s.reps} reps × ${s.weight} lbs`).join(' · ')}</div>
+            <div class="ex-detail-name">${esc(e.name)}</div>
+            <div class="ex-detail-sets">${e.sets.map((s,i)=>`Set ${i+1}: ${s.reps} reps${s.weight?` × ${s.weight} lbs`:''}`).join(' &nbsp;·&nbsp; ')}</div>
           </div>
         `).join('')}
       </div>
@@ -960,8 +1099,69 @@ async function deleteWorkout(id){
   try {
     await api('DELETE', `/api/workouts/${id}`);
     state.workouts = state.workouts.filter(w=>w.id!==id);
+    if(_workoutEditingId===id) initWorkoutForm();
     renderWorkoutHistory();
-  } catch(e) { showToast('Error deleting workout'); }
+  } catch(e){ showToast('Error deleting workout'); }
+}
+
+// ── Exercise Library Modal ────────────────────────────────────────────────────
+function openExerciseLibrary(){
+  renderExLibList();
+  document.getElementById('exercise-library-modal').style.display='flex';
+}
+function closeExerciseLibrary(){ document.getElementById('exercise-library-modal').style.display='none'; }
+function closeExLibOnBackdrop(e){ if(e.target===document.getElementById('exercise-library-modal')) closeExerciseLibrary(); }
+
+const EX_CATEGORIES = ['Legs','Push','Pull','Core','Cardio','Other'];
+
+function renderExLibList(){
+  const el = document.getElementById('exlib-list');
+  const exercises = [...(state.exercises||[])].sort((a,b)=>{
+    const ci = EX_CATEGORIES.indexOf(a.category) - EX_CATEGORIES.indexOf(b.category);
+    return ci !== 0 ? ci : a.name.localeCompare(b.name);
+  });
+  if(!exercises.length){ el.innerHTML='<div style="color:var(--text-muted);font-size:13px;">No exercises yet</div>'; return; }
+  const byCategory = {};
+  exercises.forEach(e=>{ (byCategory[e.category||'Other']??=[]).push(e); });
+  el.innerHTML = EX_CATEGORIES.filter(c=>byCategory[c]).map(cat=>`
+    <div style="margin-bottom:12px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:6px;">${cat}</div>
+      ${byCategory[cat].map(e=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--surface2);border-radius:6px;margin-bottom:4px;">
+          <span style="font-size:13px;">${esc(e.name)}</span>
+          <button class="btn-icon" onclick="deleteExercise(${e.id})" style="font-size:11px;">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+async function saveExercise(){
+  const name = document.getElementById('exlib-name').value.trim();
+  if(!name){ showToast('Enter a name'); return; }
+  const category = document.getElementById('exlib-cat').value;
+  // Don't allow exact duplicates
+  if((state.exercises||[]).some(e=>e.name.toLowerCase()===name.toLowerCase())){
+    showToast('Exercise already in library'); return;
+  }
+  try {
+    const saved = await api('POST','/api/exercises',{name, category});
+    if(!state.exercises) state.exercises=[];
+    state.exercises.push(saved);
+    document.getElementById('exlib-name').value='';
+    renderExLibList();
+    updateExerciseDatelist();
+    showToast('Exercise added!');
+  } catch(e){ showToast('Error adding exercise'); }
+}
+
+async function deleteExercise(id){
+  try {
+    await api('DELETE',`/api/exercises/${id}`);
+    state.exercises=(state.exercises||[]).filter(e=>e.id!==id);
+    renderExLibList();
+    updateExerciseDatelist();
+  } catch(e){ showToast('Error deleting exercise'); }
 }
 
 // ════════════════════════════════════════════════
@@ -1834,24 +2034,33 @@ function renderProgress(){
     [{ data:cal30.map(e=>e.cals), backgroundColor: cal30.map(e=>e.cals>0?(e.cals<=settings.calories?'rgba(34,197,94,0.7)':'rgba(248,113,113,0.6)'):'rgba(255,255,255,0.05)'), borderRadius:3 }]
   );
 
-  const exercises = [...new Set(workouts.flatMap(w=>w.exercises.map(e=>e.name)))].sort();
+  // Build exercise list: library is source of truth; also include any names from
+  // workout history that aren't already in the library (handles legacy data).
+  const libraryNames = (state.exercises || []).map(e => e.name);
+  const historyNames = workouts.flatMap(w => (w.exercises || []).map(e => e.name));
+  const allExercises = [...new Set([...libraryNames, ...historyNames])].sort();
   const sel = document.getElementById('strength-exercise-select');
   const cur = sel.value;
-  sel.innerHTML = '<option value="">Select exercise...</option>' + exercises.map(e=>`<option value="${e}"${e===cur?' selected':''}>${e}</option>`).join('');
-  if(cur && exercises.includes(cur)) renderStrengthChart();
+  sel.innerHTML = '<option value="">Select exercise...</option>' + allExercises.map(e=>`<option value="${e}"${e===cur?' selected':''}>${e}</option>`).join('');
+  if(cur && allExercises.some(e=>e.toLowerCase()===cur.toLowerCase())) renderStrengthChart();
 }
 
 function renderStrengthChart(){
   const exercise = document.getElementById('strength-exercise-select').value;
   if(!exercise){ if(charts['strength-chart']) charts['strength-chart'].destroy(); return; }
   const {workouts} = state;
+  const exLower = exercise.toLowerCase();
   const points = [];
-  workouts.filter(w=>w.exercises.some(e=>e.name===exercise))
+  workouts.filter(w=>(w.exercises||[]).some(e=>e.name.toLowerCase()===exLower))
     .sort((a,b)=>a.date.localeCompare(b.date))
     .forEach(w=>{
-      const ex = w.exercises.find(e=>e.name===exercise);
-      if(ex){ const maxWt = Math.max(...ex.sets.map(s=>s.weight)); points.push({date:w.date, weight:maxWt}); }
+      const ex = (w.exercises||[]).find(e=>e.name.toLowerCase()===exLower);
+      if(ex){
+        const weights = ex.sets.map(s=>+(s.weight)||0).filter(v=>v>0);
+        if(weights.length) points.push({date:w.date, weight:Math.max(...weights)});
+      }
     });
+  if(!points.length){ if(charts['strength-chart']) charts['strength-chart'].destroy(); return; }
   makeLineChart('strength-chart', points.map(p=>fmtDate(p.date)), [{
     data: points.map(p=>p.weight),
     borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,0.08)',
@@ -1907,7 +2116,7 @@ async function importData(input){
 
 async function clearData(){
   if(!confirm('This will delete ALL your data. Are you sure?')) return;
-  await api('POST', '/api/import', { workouts:[], bodyStats:[], nutrition:[], customFoods:[], recipes:[], settings:null, plan:null });
+  await api('POST', '/api/import', { workouts:[], bodyStats:[], nutrition:[], customFoods:[], recipes:[], exercises:[], settings:null, plan:null });
   state = await api('GET', '/api/data');
   showToast('All data cleared');
   renderDashboard();

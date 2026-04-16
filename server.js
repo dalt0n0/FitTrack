@@ -11,7 +11,7 @@ function readDB() {
   try {
     return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
   } catch {
-    return { workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], settings: null, plan: null };
+    return { workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], exercises: [], settings: null, plan: null };
   }
 }
 
@@ -29,7 +29,7 @@ if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
 }
 if (!fs.existsSync(DB_PATH)) {
-  writeDB({ workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], settings: null, plan: null });
+  writeDB({ workouts: [], bodyStats: [], nutrition: [], customFoods: [], recipes: [], exercises: [], settings: null, plan: null });
 }
 
 // ── Middleware ───────────────────────────────────
@@ -45,6 +45,7 @@ app.get('/api/data', (req, res) => {
   if (!db.settings) db.settings = { calories: 1850, protein: 200, carbs: 160, fat: 55, targetWeight: 220, height: '6\'1"' };
   if (!db.customFoods) db.customFoods = [];
   if (!db.recipes) db.recipes = [];
+  if (!db.exercises || !db.exercises.length) db.exercises = DEFAULT_EXERCISES.map((e,i)=>({id:i+1,...e}));
   res.json(db);
 });
 
@@ -59,6 +60,16 @@ app.post('/api/workouts', (req, res) => {
   db.workouts.push(workout);
   writeDB(db);
   res.json(workout);
+});
+
+app.put('/api/workouts/:id', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  const idx = db.workouts.findIndex(w => w.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'Not found' });
+  db.workouts[idx] = { ...req.body, id };
+  writeDB(db);
+  res.json(db.workouts[idx]);
 });
 
 app.delete('/api/workouts/:id', (req, res) => {
@@ -173,6 +184,68 @@ app.put('/api/settings', (req, res) => {
   db.settings = req.body;
   writeDB(db);
   res.json(db.settings);
+});
+
+// ── Default Exercise Library ──────────────────────────────────────────────────
+const DEFAULT_EXERCISES = [
+  // Legs
+  {name:'Smith Machine Squat',category:'Legs'},{name:'Leg Press',category:'Legs'},
+  {name:'Leg Curl (Machine)',category:'Legs'},{name:'Leg Extension',category:'Legs'},
+  {name:'Romanian Deadlift',category:'Legs'},{name:'Hip Thrust',category:'Legs'},
+  {name:'Calf Raise',category:'Legs'},{name:'Walking Lunge',category:'Legs'},
+  // Push
+  {name:'Smith Machine Bench Press',category:'Push'},{name:'Incline Smith Machine Press',category:'Push'},
+  {name:'Chest Fly (Machine)',category:'Push'},{name:'Cable Fly',category:'Push'},
+  {name:'Shoulder Press (Machine)',category:'Push'},{name:'Lateral Raise',category:'Push'},
+  {name:'Tricep Pushdown',category:'Push'},{name:'Overhead Tricep Extension',category:'Push'},
+  // Pull
+  {name:'Lat Pulldown',category:'Pull'},{name:'Seated Cable Row',category:'Pull'},
+  {name:'Bicep Curl',category:'Pull'},{name:'Hammer Curl',category:'Pull'},
+  {name:'Face Pull',category:'Pull'},{name:'Assisted Pull-up',category:'Pull'},
+  {name:'Cable Row',category:'Pull'},
+  // Core
+  {name:'Plank',category:'Core'},{name:'Crunch',category:'Core'},
+  {name:'Cable Crunch',category:'Core'},{name:'Ab Machine',category:'Core'},
+  // Cardio
+  {name:'Treadmill',category:'Cardio'},{name:'Elliptical',category:'Cardio'},
+  {name:'Stationary Bike',category:'Cardio'},{name:'Stair Climber',category:'Cardio'},
+];
+
+// ── Exercise Library ──────────────────────────────────────────────────────────
+app.get('/api/exercises', (req, res) => {
+  const db = readDB();
+  if (!db.exercises || !db.exercises.length) {
+    db.exercises = DEFAULT_EXERCISES.map((e,i)=>({id:i+1,...e}));
+    writeDB(db);
+  }
+  res.json(db.exercises);
+});
+
+app.post('/api/exercises', (req, res) => {
+  const db = readDB();
+  if (!db.exercises) db.exercises = [];
+  const exercise = { id: Date.now(), ...req.body };
+  db.exercises.push(exercise);
+  writeDB(db);
+  res.json(exercise);
+});
+
+app.put('/api/exercises/:id', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  const idx = (db.exercises || []).findIndex(e => e.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'Not found' });
+  db.exercises[idx] = { ...req.body, id };
+  writeDB(db);
+  res.json(db.exercises[idx]);
+});
+
+app.delete('/api/exercises/:id', (req, res) => {
+  const db = readDB();
+  const id = parseInt(req.params.id);
+  db.exercises = (db.exercises || []).filter(e => e.id !== id);
+  writeDB(db);
+  res.json({ ok: true });
 });
 
 // ── Food Search — USDA FoodData Central ──────────────────────────────────────
@@ -377,13 +450,14 @@ app.get('/api/export', (req, res) => {
 });
 
 app.post('/api/import', (req, res) => {
-  const { workouts, bodyStats, nutrition, customFoods, recipes, settings, plan } = req.body;
+  const { workouts, bodyStats, nutrition, customFoods, recipes, exercises, settings, plan } = req.body;
   writeDB({
     workouts: workouts || [],
     bodyStats: bodyStats || [],
     nutrition: nutrition || [],
     customFoods: customFoods || [],
     recipes: recipes || [],
+    exercises: exercises || [],
     settings: settings || null,
     plan: plan || null
   });
